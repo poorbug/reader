@@ -61,9 +61,31 @@ async function switchSection(dir){
  changing=true;
  try{if(dir>0)await view.next();else await view.prev();lastChange=Date.now()}finally{changing=false}
 }
+// Custom touch selection: no Safari selection menu. Highlight using overlay rectangles.
+function installCustomSelection(doc){
+ if(doc.__zhijianCustomSelection)return;doc.__zhijianCustomSelection=true;
+ const win=doc.defaultView;doc.documentElement.style.webkitTouchCallout='none';
+ doc.body.style.setProperty('-webkit-user-select','none','important');
+ doc.body.style.setProperty('user-select','none','important');
+ let timer=null,start=null,range=null,layer=null,bar=null,dragging=false;
+ const remove=()=>{layer?.remove();bar?.remove();layer=null;bar=null;range=null;doc.getSelection()?.removeAllRanges()};
+ const caret=(x,y)=>{try{if(doc.caretRangeFromPoint)return doc.caretRangeFromPoint(x,y);const p=doc.caretPositionFromPoint?.(x,y);if(!p)return null;const r=doc.createRange();r.setStart(p.offsetNode,p.offset);r.collapse(true);return r}catch{return null}};
+ const display=()=>{layer?.remove();bar?.remove();if(!range||!range.toString().trim())return;
+ layer=doc.createElement('div');layer.style.cssText='position:absolute;inset:0;pointer-events:none;z-index:2147483600';doc.body.append(layer);
+ for(const rect of range.getClientRects()){let d=doc.createElement('div');const scrollX=win.scrollX,scrollY=win.scrollY;d.style.cssText='position:absolute;background:rgba(93,157,207,.4);pointer-events:none;left:'+ (rect.left+scrollX)+'px;top:'+(rect.top+scrollY)+'px;width:'+rect.width+'px;height:'+rect.height+'px';layer.append(d)}
+ bar=doc.createElement('div');bar.style.cssText='position:fixed;z-index:2147483640;display:flex;gap:10px;padding:9px 14px;border-radius:12px;background:#263b34;color:white;font:15px sans-serif;box-shadow:0 3px 14px #0004;top:12px;left:50%;transform:translateX(-50%)';
+ for(const [label,action] of [['复制','copy'],['划线','highlight'],['笔记','note'],['取消','dismiss']]){const b=doc.createElement('button');b.textContent=label;b.style.cssText='border:0;background:none;color:white;font:inherit;padding:5px';b.onclick=async e=>{e.stopPropagation();const text=range?.toString()||'';if(action==='copy'){try{await navigator.clipboard.writeText(text)}catch{parent.postMessage({type:'CUSTOM_COPY_TEXT',text},location.origin)}}else if(action!=='dismiss'){parent.postMessage({type:'MOBI_CUSTOM_SELECTION',text,action},location.origin)}remove()};bar.append(b)}doc.body.append(bar);
+ };
+ const expand=(x,y)=>{let end=caret(x,y);if(!start||!end)return;const a=start.cloneRange();a.setEnd(end.startContainer,end.startOffset);if(a.collapsed&&x===undefined)return;range=a;display()};
+ doc.addEventListener('touchstart',e=>{if(e.touches.length!==1||e.target.closest('button,input,textarea,a'))return;const t=e.touches[0];let x=t.clientX,y=t.clientY;dragging=false;start=caret(x,y);clearTimeout(timer);timer=setTimeout(()=>{if(!start)return;const n=start.startContainer;if(n.nodeType!==3)return;let str=n.textContent||'',pos=start.startOffset,l=pos,r=pos;while(l>0&&!/\s|[，。！？；：、]/.test(str[l-1]))l--;while(r<str.length&&!/\s|[，。！？；：、]/.test(str[r]))r++;range=doc.createRange();range.setStart(n,l);range.setEnd(n,Math.max(l+1,r));display();dragging=true},480)},{passive:true});
+ doc.addEventListener('touchmove',e=>{if(e.touches.length!==1)return;const t=e.touches[0];if(!dragging){clearTimeout(timer);return}const end=caret(t.clientX,t.clientY);if(end&&range){try{range.setEnd(end.startContainer,end.startOffset);display()}catch{}}},{passive:true});
+ doc.addEventListener('touchend',()=>{clearTimeout(timer);dragging=false},{passive:true});
+ doc.addEventListener('contextmenu',e=>e.preventDefault(),true);
+ doc.addEventListener('click',e=>{if(bar&&!bar.contains(e.target))remove()},true);
+}
 function wireTouch(doc){
  if(!doc||doc.__zhijianSwipe)return;
- doc.__zhijianSwipe=true;
+ doc.__zhijianSwipe=true;installCustomSelection(doc);
  doc.documentElement.style.touchAction='pan-y';doc.documentElement.style.webkitTouchCallout='none';doc.body.style.webkitTouchCallout='none';doc.addEventListener('contextmenu',e=>e.preventDefault());
  doc.addEventListener('touchmove',()=>parent.postMessage({type:'READER_SCROLL'},location.origin),{passive:true});
  doc.addEventListener('wheel',()=>parent.postMessage({type:'READER_SCROLL'},location.origin),{passive:true});
