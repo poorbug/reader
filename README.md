@@ -25,11 +25,15 @@ Pages 地址（启用 Pages 后）：https://poorbug.github.io/reader/
 
 **发布新版本时必须同步更新以下三处：** `app.js` 内的 `APP_VERSION`、`version.json` 中的 `version`、`sw.js` 内的 `VERSION` 和 `NAME`（增加缓存版本号）。部署完成后，旧页面才能正确识别并加载新版本。GitHub Pages 自动部署可能需要一段时间。
 
+## MOBI 引擎的部署方式
+
+自动部署时，Actions 会从 `johnfactotum/foliate-js` 拉取固定提交 `78914aef4466eb960965702401634c2cb348e9b1` 到 `vendor/foliate-js/`，一起发布到 Pages；运行时使用 `./vendor/foliate-js/view.js`，不使用外部 CDN。Service Worker 将主要 MOBI 依赖一起缓存，避免安装版 PWA 在无网络时动态导入失败。仓库中的代码保持精简；不要直接编辑 Actions 生成的 `vendor/` 文件。
+
 ## 重要限制
 
 - 这是尚待实际 EPUB 文件与 iPhone Safari 真机验证的 MVP 原型，不能视为正式稳定版。
 - 仅支持无 DRM 的 EPUB、PDF 和 MOBI。PDF 是原版页面查看；MOBI 使用 foliate-js 试验性阅读。PDF/MOBI 尚未实现原有 EPUB 的划线笔记及进度恢复。
-- 初次加载 EPUB 和 MOBI 引擎依赖外部 CDN；MOBI 模块并未完整预缓存，离线首次打开 MOBI 不保证成功。缓存成功后才可离线使用；需验证断网场景。
+- MOBI 使用随 GitHub Pages 一同发布的 foliate-js 固定版本（GitHub Actions 自动拉取），所需模块由 Service Worker 预缓存，不再在手机运行时请求 jsDelivr。首次更新需联网完成缓存；仍需 Android/iPhone 真机验证离线场景。EPUB 引擎仍从 jsDelivr 首次加载，缓存后可在离线环境使用。
 - iOS 的选词与划线交互、复杂 EPUB 排版仍需测试。
 - IndexedDB 不是永久保管库。清除站点数据可能丢失书籍与笔记，请定期导出备份。
 - 备份中电子书使用 base64，会使文件体积增大；大规模书库建议改 ZIP。
