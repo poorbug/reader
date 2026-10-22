@@ -177,7 +177,7 @@ window.addEventListener('message',async e=>{
  bookId=e.data.bookId;noteMap=new Map((e.data.notes||[]).filter(h=>h.id).map(h=>[h.id,h]));initialCFI=e.data.cfi||null;initialSection=e.data.sectionIndex??null;prefs={...prefs,...(e.data.prefs||{})};document.getElementById('size').value=prefs.size;document.getElementById('lineHeight').value=prefs.lineHeight;document.getElementById('theme').value=prefs.theme;
  try{
   status.textContent='正在加载 MOBI 阅读引擎…';
-  await import('https://cdn.jsdelivr.net/gh/johnfactotum/foliate-js@main/view.js');
+  await import('./vendor/foliate-js/view.js');
   view=document.createElement('foliate-view');
   document.getElementById('holder').append(view);
   await view.open(new File([e.data.buffer],e.data.name,{type:'application/x-mobipocket-ebook'}));
@@ -205,6 +205,6 @@ window.addEventListener('message',async e=>{
   // Chapter navigation is rendered by the parent unified reader panel.
   for(const x of view.renderer.getContents()){wireTouch(x.doc);locateLegacyMobiNotes(x.doc,x.index)}normalizeBookHeadings();fixLegacyMobiTitles();scheduleNoteDrawing();
   status.remove();
- }catch(err){console.error(err);status.textContent='MOBI 打开失败：'+err.message}
+ }catch(err){console.error(err);status.textContent='MOBI 打开失败：'+err.message+'。请先联网打开「设置 → 检查更新」并刷新至最新版本；电子书仍保存在本机。'}
 });
 document.addEventListener('gesturestart', e=>e.preventDefault(),{passive:false});document.addEventListener('gesturechange',e=>e.preventDefault(),{passive:false});</script></body></html>
