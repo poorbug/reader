@@ -1,7 +1,7 @@
 'use strict';
-const APP_VERSION='1.0.26';
+const APP_VERSION='1.0.27';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const app=$('#app');let db,books=[],tab='all',view='shelf',active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
+const app=$('#app');let db,books=[],tab='all',view='shelf',notesGroupBookId=null,active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
 const rq=r=>new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const st=(name,mode='readonly')=>db.transaction(name,mode).objectStore(name);
@@ -12,8 +12,8 @@ try{settings={...settings,...JSON.parse(localStorage.getItem('zhijian-reading-se
 function toast(s){$('.toast')?.remove();let e=document.createElement('div');e.className='toast';e.textContent=s;document.body.append(e);setTimeout(()=>e.remove(),3500)}
 async function refresh(){if(!active)syncPageTheme(null);books=(await all('books')).sort((a,b)=>String(b.lastRead||b.createdAt).localeCompare(String(a.lastRead||a.createdAt)));render()}
 function shell(body){app.innerHTML='<main class="app"><header class="top"><div><div class="eyebrow">MY READING SPACE</div><h1>'+({shelf:'我的书架',notes:'阅读笔记',settings:'设置'}[view])+'</h1></div>'+(view==='shelf'?'<button class="btn" id="add">＋ 导入</button>':'')+'</header>'+body+'</main><nav class="bottom">'+[['shelf','▤','书架'],['notes','✎','笔记'],['settings','⚙','设置']].map(x=>'<button class="nav '+(view===x[0]?'active':'')+'" data-nav="'+x[0]+'"><span>'+x[1]+'</span>'+x[2]+'</button>').join('')+'</nav><input type="file" accept=".epub,.pdf,.mobi,application/epub+zip,application/pdf,application/x-mobipocket-ebook" multiple hidden id="picker">';
-document.querySelectorAll('[data-nav]').forEach(e=>e.onclick=()=>{view=e.dataset.nav;render()});$('#add')?.addEventListener('click',showImportOptions);$('#picker').onchange=e=>importFiles(e.target.files)}
-function render(){if(active)return;if(view==='shelf'){const filtered=books.filter(b=>tab==='all'||b.status===tab);shell('<p class="muted">'+books.length+' 本书 · 所有书籍仅保存于当前设备</p><div class="tabs">'+[['all','全部'],['reading','在读'],['finished','已读'],['archived','归档']].map(x=>'<button class="tab '+(tab===x[0]?'active':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+(filtered.length?'<section class="books">'+filtered.map(b=>'<article class="book" data-book="'+b.id+'"><div class="cover">'+(b.cover?'<img alt="" src="'+b.cover+'">':esc(b.title))+'</div><div class="book-title">'+esc(b.title)+'</div><div class="book-author">'+esc(b.author||'未知作者')+'</div><div class="progress"><div style="width:'+Math.round((b.percent||0)*100)+'%"></div></div><div class="actions"><button class="btn ghost small" data-manage="'+b.id+'">管理</button></div></article>').join('')+'</section>':'<div class="empty"><div class="big">▤</div><h2>你的书架还是空的</h2><p>导入 EPUB 开始阅读</p><button class="btn" id="empty-add">导入电子书</button></div>'));document.querySelectorAll('[data-tab]').forEach(e=>e.onclick=()=>{tab=e.dataset.tab;render()});document.querySelectorAll('[data-book]').forEach(e=>e.onclick=ev=>{if(!ev.target.closest('button'))openReader(e.dataset.book)});document.querySelectorAll('[data-manage]').forEach(e=>e.onclick=()=>manage(e.dataset.manage));$('#empty-add')?.addEventListener('click',showImportOptions)}else if(view==='notes')notesPage();else{shell('<div class="card"><h2>本地书库与备份</h2><p class="muted">电子书、进度、笔记保存在 IndexedDB；清理网站数据可能丢失，请定期备份。</p><button class="btn" id="export">导出完整备份</button> <button class="btn ghost" id="import-backup">恢复备份</button><input type="file" accept=".json" hidden id="backup-picker"></div><div class="card update-card"><h2>应用更新</h2><p class="muted">当前运行版本：<strong>v'+APP_VERSION+'</strong></p><p id="update-status" class="muted" role="status" aria-live="polite">点击按钮检查 GitHub Pages 上的最新版本。</p><div class="update-actions"><button class="btn" id="check-update">检查更新</button><button class="btn ghost" id="refresh-update" hidden>刷新并使用新版</button></div><p class="muted">仅更新阅读器程序，不会主动删除本地书籍和笔记。</p></div><div class="card"><h2>关于纸间</h2><p><strong>当前版本：v'+APP_VERSION+'</strong></p><p>无需账号 · 无服务器上传 · 可离线阅读</p><p class="muted">首次打开请保持联网，待应用资源缓存后再断网测试。</p></div>');$('#export').onclick=backup;$('#import-backup').onclick=()=>$('#backup-picker').click();$('#backup-picker').onchange=e=>restore(e.target.files[0]);$('#check-update').onclick=checkForAppUpdates;$('#refresh-update').onclick=()=>window.location.reload();paintUpdateStatus()}}
+document.querySelectorAll('[data-nav]').forEach(e=>e.onclick=()=>{if(e.dataset.nav==='notes')notesGroupBookId=null;view=e.dataset.nav;render()});$('#add')?.addEventListener('click',showImportOptions);$('#picker').onchange=e=>importFiles(e.target.files)}
+function render(){if(active)return;if(view==='shelf'){const filtered=books.filter(b=>tab==='all'||b.status===tab);shell('<p class="muted">'+books.length+' 本书 · 所有书籍仅保存于当前设备</p><div class="tabs">'+[['all','全部'],['reading','在读'],['finished','已读'],['archived','归档']].map(x=>'<button class="tab '+(tab===x[0]?'active':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+(filtered.length?'<section class="books">'+filtered.map(b=>'<article class="book" data-book="'+b.id+'"><div class="cover">'+(b.cover?'<img alt="" src="'+b.cover+'">':esc(b.title))+'</div><div class="book-title">'+esc(b.title)+'</div><div class="book-author">'+esc(b.author||'未知作者')+'</div><div class="progress"><div style="width:'+Math.round((b.percent||0)*100)+'%"></div></div><div class="actions"><button class="btn ghost small" data-manage="'+b.id+'">管理</button></div></article>').join('')+'</section>':'<div class="empty"><div class="big">▤</div><h2>你的书架还是空的</h2><p>点击右上角「＋ 导入」，添加你的第一本书</p></div>'));document.querySelectorAll('[data-tab]').forEach(e=>e.onclick=()=>{tab=e.dataset.tab;render()});document.querySelectorAll('[data-book]').forEach(e=>e.onclick=ev=>{if(!ev.target.closest('button'))openReader(e.dataset.book)});document.querySelectorAll('[data-manage]').forEach(e=>e.onclick=()=>manage(e.dataset.manage));}else if(view==='notes')notesPage();else{shell('<div class="card"><h2>本地书库与备份</h2><p class="muted">电子书、进度、笔记保存在 IndexedDB；清理网站数据可能丢失，请定期备份。</p><button class="btn" id="export">导出完整备份</button> <button class="btn ghost" id="import-backup">恢复备份</button><input type="file" accept=".json" hidden id="backup-picker"></div><div class="card update-card"><h2>应用更新</h2><p class="muted">当前运行版本：<strong>v'+APP_VERSION+'</strong></p><p id="update-status" class="muted" role="status" aria-live="polite">点击按钮检查 GitHub Pages 上的最新版本。</p><div class="update-actions"><button class="btn" id="check-update">检查更新</button><button class="btn ghost" id="refresh-update" hidden>刷新并使用新版</button></div><p class="muted">仅更新阅读器程序，不会主动删除本地书籍和笔记。</p></div><div class="card"><h2>关于纸间</h2><p><strong>当前版本：v'+APP_VERSION+'</strong></p><p>无需账号 · 无服务器上传 · 可离线阅读</p><p class="muted">首次打开请保持联网，待应用资源缓存后再断网测试。</p></div>');$('#export').onclick=backup;$('#import-backup').onclick=()=>$('#backup-picker').click();$('#backup-picker').onchange=e=>restore(e.target.files[0]);$('#check-update').onclick=checkForAppUpdates;$('#refresh-update').onclick=()=>window.location.reload();paintUpdateStatus()}}
 const updateState={checking:false,ready:false,remoteVersion:null,message:'点击检查更新，从 GitHub Pages 获取最新版本。'};
 function paintUpdateStatus(){
  const msg=$('#update-status'),check=$('#check-update'),reload=$('#refresh-update');
@@ -308,7 +308,7 @@ async function showHighlights(){
 }
 
 
-function readerShell(title,content){return '<section class="reader immersive-reader" id="reader"><div class="reader-body reader-full">'+content+'</div><header class="reader-top reading-chrome" id="reader-top"><button class="icon-btn" id="reader-back" aria-label="返回"><svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true" focusable="false"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span class="title">'+esc(title)+'</span><span style="width:38px"></span></header><footer class="reading-chrome reader-toolbar" id="reader-toolbar"><button id="reader-toc" aria-label="目录">☰<small>目录</small></button><button id="reader-notes" aria-label="查看本书划线和笔记">✎<small>笔记</small></button><button disabled aria-label="进度稍后开放">◉<small>进度</small></button><button id="reader-colors" aria-label="颜色和亮度">☼<small>颜色</small></button><button id="reader-fonts" aria-label="字体和排版">A<small>字体</small></button></footer><div class="reading-dimmer" id="reading-dimmer"></div><div class="reading-settings" id="reading-settings" hidden></div></section>'}
+function readerShell(title,content){return '<section class="reader immersive-reader" id="reader"><div class="reader-body reader-full">'+content+'</div><header class="reader-top reading-chrome" id="reader-top"><button class="icon-btn" id="reader-back" aria-label="返回"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span class="title">'+esc(title)+'</span><span style="width:38px"></span></header><footer class="reading-chrome reader-toolbar" id="reader-toolbar"><button id="reader-toc" aria-label="目录">☰<small>目录</small></button><button id="reader-notes" aria-label="查看本书划线和笔记">✎<small>笔记</small></button><button disabled aria-label="进度稍后开放">◉<small>进度</small></button><button id="reader-colors" aria-label="颜色和亮度">☼<small>颜色</small></button><button id="reader-fonts" aria-label="字体和排版">A<small>字体</small></button></footer><div class="reading-dimmer" id="reading-dimmer"></div><div class="reading-settings" id="reading-settings" hidden></div></section>'}
 function closeReaderPanels(){const p=$('#reading-settings');if(p){p.hidden=true;p.dataset.kind=''}for(const k of ['toc','notes','colors','fonts'])$('#reader-'+k)?.classList.remove('selected')}
 function openReaderPanel(kind){const p=$('#reading-settings');if(!p)return;p.hidden=false;p.dataset.kind=kind;for(const k of ['toc','notes','colors','fonts'])$('#reader-'+k)?.classList.toggle('selected',k===kind)}
 function toggleReaderChrome(show){if(show!==false&&$('#inline-note-actions')){closeInlineNoteActions();return}const r=$('#reader');if(!r)return;const visible=show===undefined?!r.classList.contains('chrome-visible'):show;r.classList.toggle('chrome-visible',visible);if(!visible)closeReaderPanels()}
@@ -371,7 +371,81 @@ async function openDocumentReader(b,f,target){
   b.lastRead=now();await put('books',b);
 }
 async function closeReader(){closeInlineNoteActions();clearSelection();removePop();active=null;try{rendition?.destroy();epub?.destroy()}catch{}rendition=null;epub=null;await refresh()}
-async function notesPage(){let hs=(await all('highlights')).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));shell('<p class="muted">'+hs.length+' 条划线与笔记</p>'+(hs.map(h=>'<div class="card"><div class="note-title">'+esc(books.find(b=>b.id===h.bookId)?.title||'已删除书籍')+'</div><div class="note">'+esc(h.text)+'</div>'+(h.note?'<p class="note-text">'+esc(h.note)+'</p>':'')+'<div class="actions"><button class="btn ghost small" data-go="'+h.id+'">回到原文</button><button class="btn ghost small" data-edit="'+h.id+'">编辑</button><button class="btn ghost small" data-del="'+h.id+'">删除</button></div></div>').join('')||'<div class="empty">暂无笔记，阅读时选中文字即可添加</div>'));document.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>{let h=hs.find(y=>y.id===x.dataset.go);openReader(h.bookId,h.cfi)});document.querySelectorAll('[data-edit]').forEach(x=>x.onclick=async()=>{let h=hs.find(y=>y.id===x.dataset.edit),v=prompt('编辑笔记',h.note||'');if(v!==null){h.note=v;await put('highlights',h);notesPage()}});document.querySelectorAll('[data-del]').forEach(x=>x.onclick=async()=>{if(confirm('删除划线与笔记？')){await del('highlights',x.dataset.del);notesPage()}})}
+async function notesPage(){
+ const records=(await all('highlights')).sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||'')));
+ if(view!=='notes'||active)return;
+ const byBook=new Map();
+ for(const item of records){
+  if(!item.bookId)continue;
+  if(!byBook.has(item.bookId))byBook.set(item.bookId,[]);
+  byBook.get(item.bookId).push(item);
+ }
+ const bookById=new Map(books.map(b=>[b.id,b]));
+ if(notesGroupBookId&&!bookById.has(notesGroupBookId))notesGroupBookId=null;
+ if(!notesGroupBookId){
+  const groups=[...byBook].map(([bookId,items])=>({
+   book:bookById.get(bookId),
+   bookId,items,
+   thoughts:items.filter(h=>typeof h.note==='string'&&h.note.trim()).length,
+   latest:items[0],
+   date:items[0]?.updatedAt||items[0]?.createdAt||''
+  })).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  const body='<p class="muted">'+groups.length+' 本书 · '+records.length+' 条划线和笔记</p>'+
+   (groups.length?'<section class="notes-books">'+groups.map(g=>{
+    const b=g.book||{title:'已删除书籍',author:''},cover=b.cover?
+     '<img src="'+esc(b.cover)+'" alt="" loading="lazy">':
+     '<span class="notes-book-placeholder">▤</span>';
+    const preview=String(g.latest?.note||g.latest?.text||'').replace(/\\s+/g,' ').slice(0,72);
+    return '<button class="notes-book-row" type="button" data-note-book="'+esc(g.bookId)+'">'+
+      '<span class="notes-book-cover">'+cover+'</span>'+
+      '<span class="notes-book-info"><strong>'+esc(b.title)+'</strong>'+
+      (b.author?'<span class="notes-book-author">'+esc(b.author)+'</span>':'')+
+      '<span class="notes-book-count">'+g.items.length+' 条划线 · '+g.thoughts+' 条想法</span>'+
+      '<span class="notes-book-preview">'+esc(preview)+'</span></span>'+
+      '<span class="notes-book-chevron" aria-hidden="true">›</span></button>';
+   }).join('')+'</section>':'<div class="empty"><div class="big">✎</div><h2>还没有阅读笔记</h2><p>打开书籍，长按文字即可记录划线和想法</p></div>');
+  shell(body);
+  document.querySelectorAll('[data-note-book]').forEach(button=>button.onclick=()=>{
+   notesGroupBookId=button.dataset.noteBook;notesPage();
+  });
+  return;
+ }
+ const bookId=notesGroupBookId,book=bookById.get(bookId);
+ const notes=byBook.get(bookId)||[];
+ if(!book){notesGroupBookId=null;notesPage();return}
+ const header='<div class="notes-detail-head"><button class="notes-back" type="button" id="notes-back">‹ 返回书籍列表</button>'+
+  '<h2>'+esc(book.title)+'</h2><p class="muted">'+notes.length+' 条划线和笔记 · '+notes.filter(h=>h.note?.trim()).length+' 条想法</p></div>';
+ shell(header+(notes.length?notes.map(h=>{
+  const date=h.createdAt?new Date(h.createdAt).toLocaleDateString('zh-CN'):'';
+  return '<article class="card notes-detail-card" data-note-id="'+esc(h.id)+'"><div class="note-title">'+esc(date)+(h.note?' · 我的笔记':' · 划线')+'</div>'+
+   '<blockquote class="note">'+esc(h.text||'')+'</blockquote>'+
+   (h.note?'<p class="note-text">'+esc(h.note)+'</p>':'')+
+   '<div class="actions">'+(h.cfi?'<button class="btn ghost small" data-note-act="go">回到原文</button>':'')+
+   '<button class="btn ghost small" data-note-act="edit">编辑</button>'+
+   '<button class="btn ghost small" data-note-act="del">删除</button></div></article>';
+ }).join(''):'<div class="empty">这本书还没有笔记。<br>点击左上方可以返回书籍列表。</div>'));
+ $('#notes-back').onclick=()=>{notesGroupBookId=null;notesPage()};
+ document.querySelectorAll('[data-note-id]').forEach(card=>{
+  card.querySelectorAll('[data-note-act]').forEach(button=>button.onclick=async()=>{
+   const noteId=card.dataset.noteId;
+   const note=await get('highlights',noteId);
+   if(!note||note.bookId!==bookId){toast('笔记不存在');notesPage();return}
+   const action=button.dataset.noteAct;
+   if(action==='go'){
+    if(!note.cfi){toast('这条笔记暂时无法定位');return}
+    openReader(bookId,note.cfi);
+   }else if(action==='edit'){
+    const value=prompt('编辑笔记',note.note||'');
+    if(value===null)return;
+    note.note=value;note.updatedAt=now();
+    try{await put('highlights',note);notesPage()}catch(e){console.error(e);toast('保存失败')}
+   }else if(action==='del'){
+    if(!confirm('删除这条划线和笔记？'))return;
+    try{await del('highlights',note.id);notesPage()}catch(e){console.error(e);toast('删除失败')}
+   }
+  });
+ });
+}
 async function backup(){try{let out={version:1,createdAt:now(),books:await all('books'),progress:await all('progress'),highlights:await all('highlights'),bookmarks:await all('bookmarks'),files:[]};for(let f of await all('files')){let bytes=new Uint8Array(await f.blob.arrayBuffer()),str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));out.files.push({id:f.id,name:f.name,base64:btoa(str)})}let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));a.download='zhijian-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000);toast('请将备份保存到安全位置')}catch(e){toast('备份失败：'+e.message)}}
 async function restore(file){if(!file)return;try{let d=JSON.parse(await file.text());if(d.version!==1||!Array.isArray(d.books)||!Array.isArray(d.files))throw Error('备份格式不正确');if(!confirm('恢复 '+d.books.length+' 本书？相同 ID 数据将覆盖'))return;for(let f of d.files){let raw=atob(f.base64),bytes=Uint8Array.from(raw,x=>x.charCodeAt(0));await put('files',{id:f.id,name:f.name,blob:new Blob([bytes],{type:({pdf:'application/pdf',mobi:'application/x-mobipocket-ebook',epub:'application/epub+zip'}[(d.books.find(b=>b.id===f.id)?.format)||'epub'])})})}for(let b of d.books)await put('books',b);for(let store of ['progress','highlights','bookmarks'])for(let row of d[store]||[])await put(store,row);view='shelf';toast('备份已恢复');await refresh()}catch(e){toast('恢复失败：'+e.message)}}
 (async()=>{try{db=await openDb();await refresh();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn)}catch(e){app.textContent='数据库初始化失败：'+e.message}})();
