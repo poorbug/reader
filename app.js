@@ -25,6 +25,21 @@ async function importUrl(value,status){
   let url;try{url=new URL(value)}catch{throw Error('请输入完整的 HTTPS 下载地址')}
   if(url.protocol!=='https:')throw Error('仅支持 HTTPS 链接');
   if(url.username||url.password)throw Error('链接中不能包含账号或密码');
+  // GitHub's /blob/ URL serves an HTML viewer. Convert it to a download URL.
+  if(url.hostname==='github.com'){
+    const match=url.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/);
+    if(match){
+      const [,owner,repoName,branch,path]=match;
+      if(owner.toLowerCase()==='poorbug'&&repoName.toLowerCase()==='reader'&&branch==='main'){
+        url=new URL('https://poorbug.github.io/reader/'+path);
+      }else{
+        url=new URL('https://raw.githubusercontent.com/'+owner+'/'+repoName+'/'+branch+'/'+path);
+      }
+    }else{
+      throw Error('请使用 GitHub 文件的 blob 地址或直接下载地址');
+    }
+  }
+
   
   let response;try{response=await fetch(url.href,{mode:'cors',credentials:'omit',redirect:'follow'})}catch{throw Error('无法下载：请检查地址、网络及网站是否允许跨域访问（CORS）')}
   if(!response.ok)throw Error('下载失败，HTTP '+response.status);
