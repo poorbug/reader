@@ -64,7 +64,7 @@ async function switchSection(dir){
 function wireTouch(doc){
  if(!doc||doc.__zhijianSwipe)return;
  doc.__zhijianSwipe=true;
- doc.documentElement.style.touchAction='pan-y';
+ doc.documentElement.style.touchAction='pan-y';doc.documentElement.style.webkitTouchCallout='none';doc.body.style.webkitTouchCallout='none';doc.addEventListener('contextmenu',e=>e.preventDefault());
  doc.addEventListener('touchmove',()=>parent.postMessage({type:'READER_SCROLL'},location.origin),{passive:true});
  doc.addEventListener('wheel',()=>parent.postMessage({type:'READER_SCROLL'},location.origin),{passive:true});
  doc.body.style.touchAction='pan-y';
