@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.24';
+const APP_VERSION='1.0.25';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='all',view='shelf',active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
@@ -190,7 +190,7 @@ async function renderBookNotes(bookId){
  p.innerHTML='<div class="setting-title">本书的划线与笔记</div><p class="book-note-count">'+notes.length+' 条记录，保存在当前设备</p><div class="book-note-list">'+(notes.length?notes.map(h=>{
   const located=!!h.cfi&&['epub','mobi'].includes(active.format||'epub');
   const date=h.createdAt?new Date(h.createdAt).toLocaleDateString('zh-CN'):'';
-  return '<article class="book-note-card" data-note-id="'+esc(h.id)+'"><div class="book-note-meta"><span>'+(h.note?'笔记':'划线')+'</span><time>'+esc(date)+'</time></div><blockquote class="book-note-quote">'+esc(h.text||'（未保存文字）')+'</blockquote>'+(h.note?'<div class="book-note-comment">'+esc(h.note)+'</div>':'')+'<div class="book-note-actions">'+(located?'<button class="book-note-action" data-act="jump">回到原文</button>':'<span class="book-note-unlocated">暂不支持定位</span>')+'<button class="book-note-action" data-act="edit">编辑</button><button class="book-note-action" data-act="copy">复制</button><button class="book-note-action" data-act="delete">删除</button></div></article>';
+  return '<article class="book-note-card" data-note-id="'+esc(h.id)+'"><div class="book-note-meta"><span>'+(h.note?'笔记':'划线')+'</span><time>'+esc(date)+'</time></div><blockquote class="book-note-quote">'+esc(h.text||'（未保存文字）')+'</blockquote>'+(h.note?'<div class="book-note-comment">'+esc(h.note)+'</div>':'')+'<div class="book-note-actions">'+(located?'<button class="book-note-action" data-act="jump">回到原文</button>':'<span class="book-note-unlocated">暂不支持定位</span>')+'<button class="book-note-action" data-act="edit">编辑</button><button class="book-note-action" data-act="delete">删除</button></div></article>';
  }).join(''):'<div class="book-note-empty">还没有划线或笔记。<br>在正文中长按选中文字，即可添加。</div>')+'</div>';
  p.scrollTop=scroll;
  p.querySelectorAll('[data-note-id]').forEach(card=>{
@@ -207,9 +207,6 @@ async function renderBookNotes(bookId){
     if(value===null)return;
     current.note=value;current.updatedAt=now();
     try{await put('highlights',current);await syncNoteMark(current);await renderBookNotes(bookId)}catch(e){console.error(e);toast('保存失败')}
-   }else if(action==='copy'){
-    try{await navigator.clipboard.writeText((current.text||'')+(current.note?'\n\n'+current.note:''));toast('已复制')}
-    catch{toast('复制失败，请检查剪贴板权限')}
    }else if(action==='delete'){
     if(!confirm('确定删除这条划线和笔记？'))return;
     try{
@@ -281,7 +278,7 @@ async function showHighlights(){
 }
 
 
-function readerShell(title,content){return '<section class="reader immersive-reader" id="reader"><div class="reader-body reader-full">'+content+'</div><header class="reader-top reading-chrome" id="reader-top"><button class="icon-btn" id="reader-back" aria-label="返回">‹</button><span class="title">'+esc(title)+'</span><span style="width:38px"></span></header><footer class="reading-chrome reader-toolbar" id="reader-toolbar"><button id="reader-toc" aria-label="目录">☰<small>目录</small></button><button id="reader-notes" aria-label="查看本书划线和笔记">✎<small>笔记</small></button><button disabled aria-label="进度稍后开放">◉<small>进度</small></button><button id="reader-colors" aria-label="颜色和亮度">☼<small>颜色</small></button><button id="reader-fonts" aria-label="字体和排版">A<small>字体</small></button></footer><div class="reading-dimmer" id="reading-dimmer"></div><div class="reading-settings" id="reading-settings" hidden></div></section>'}
+function readerShell(title,content){return '<section class="reader immersive-reader" id="reader"><div class="reader-body reader-full">'+content+'</div><header class="reader-top reading-chrome" id="reader-top"><button class="icon-btn" id="reader-back" aria-label="返回"><svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true" focusable="false"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span class="title">'+esc(title)+'</span><span style="width:38px"></span></header><footer class="reading-chrome reader-toolbar" id="reader-toolbar"><button id="reader-toc" aria-label="目录">☰<small>目录</small></button><button id="reader-notes" aria-label="查看本书划线和笔记">✎<small>笔记</small></button><button disabled aria-label="进度稍后开放">◉<small>进度</small></button><button id="reader-colors" aria-label="颜色和亮度">☼<small>颜色</small></button><button id="reader-fonts" aria-label="字体和排版">A<small>字体</small></button></footer><div class="reading-dimmer" id="reading-dimmer"></div><div class="reading-settings" id="reading-settings" hidden></div></section>'}
 function closeReaderPanels(){const p=$('#reading-settings');if(p){p.hidden=true;p.dataset.kind=''}for(const k of ['toc','notes','colors','fonts'])$('#reader-'+k)?.classList.remove('selected')}
 function openReaderPanel(kind){const p=$('#reading-settings');if(!p)return;p.hidden=false;p.dataset.kind=kind;for(const k of ['toc','notes','colors','fonts'])$('#reader-'+k)?.classList.toggle('selected',k===kind)}
 function toggleReaderChrome(show){if(show!==false&&$('#inline-note-actions')){closeInlineNoteActions();return}const r=$('#reader');if(!r)return;const visible=show===undefined?!r.classList.contains('chrome-visible'):show;r.classList.toggle('chrome-visible',visible);if(!visible)closeReaderPanels()}
