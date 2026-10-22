@@ -60,3 +60,14 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .update-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .update-actions .btn:disabled{opacity:.6;cursor:wait}
 .update-actions [hidden]{display:none!important}
+
+/* v1.0.22 selection actions are outside the book iframe so iOS cannot clip them. */
+.immersive-reader .selected-action{
+ position:absolute;z-index:90;bottom:calc(22px + env(safe-area-inset-bottom));
+ left:16px;right:16px;margin:auto;max-width:440px;min-height:52px;
+ display:flex;align-items:center;justify-content:space-around;gap:6px;
+ background:#263b34;color:#fff;border:1px solid #ffffff35;
+ border-radius:14px;box-shadow:0 8px 28px #0006;padding:8px;
+}
+.immersive-reader .selected-action button{padding:9px 12px;border-radius:9px;flex:1;font-size:15px}
+.immersive-reader .selected-action button:active{background:#ffffff25}
