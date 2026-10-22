@@ -29,3 +29,12 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .reading-settings .setting-title{font-size:16px;font-weight:600}
 .reading-dimmer{position:absolute;inset:0;background:black;opacity:0;pointer-events:none;z-index:14}
 .immersive-reader .panel{z-index:29;bottom:calc(68px + env(safe-area-inset-bottom));top:calc(54px + env(safe-area-inset-top))}
+
+/* v1.0.11: independent slide-in chrome and selected preferences */
+.immersive-reader .reading-chrome{transition:opacity .24s ease,transform .24s ease,visibility .24s;will-change:transform,opacity}
+.immersive-reader .reader-top.reading-chrome{transform:translateY(-105%)}
+.immersive-reader .reader-toolbar.reading-chrome{transform:translateY(105%)}
+.immersive-reader.chrome-visible .reader-top.reading-chrome,.immersive-reader.chrome-visible .reader-toolbar.reading-chrome{transform:translateY(0)}
+.reader-toolbar button.selected{color:#9ad2bf;background:rgba(151,202,186,.15);border-radius:10px}
+.reading-settings .theme-option.selected{background:#487b6e;border-color:#a5e6ce;color:white;box-shadow:0 0 0 2px #a5e6ce55 inset}
+@media(prefers-reduced-motion:reduce){.immersive-reader .reading-chrome{transition:none}}
