@@ -73,7 +73,7 @@ async function showHighlights(){for(let h of (await all('highlights')).filter(x=
 let documentUrl=null;
 async function openDocumentReader(b,f){
   active=b;let format=b.format||'epub';
-  app.innerHTML='<section class="reader" id="reader"><header class="reader-top"><button class="icon-btn" id="back">←</button><span class="title">'+esc(b.title)+'</span><span>'+format.toUpperCase()+'</span></header><div class="reader-body" id="document-body" style="height:100%"></div><footer class="reader-bottom"><span class="muted">'+(format==='pdf'?'PDF 原版页面阅读':'MOBI 试验性阅读模式')+'</span></footer></section>';
+  app.innerHTML='<section class="reader" id="reader"><header class="reader-top"><button class="icon-btn" id="back">←</button><span class="title">'+esc(b.title)+'</span><span>'+format.toUpperCase()+'</span></header><div class="reader-body" id="document-body" style="height:100%;min-height:0;flex:1"></div></section>';
   $('#back').onclick=async()=>{documentUrl&&URL.revokeObjectURL(documentUrl);documentUrl=null;active=null;await refresh()};
   if(format==='pdf'){
     documentUrl=URL.createObjectURL(f.blob);
