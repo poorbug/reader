@@ -395,7 +395,7 @@ async function notesPage(){
     const b=g.book||{title:'已删除书籍',author:''},cover=b.cover?
      '<img src="'+esc(b.cover)+'" alt="" loading="lazy">':
      '<span class="notes-book-placeholder">▤</span>';
-    const preview=String(g.latest?.note||g.latest?.text||'').replace(/\\s+/g,' ').slice(0,72);
+    const preview=String(g.latest?.note||g.latest?.text||'').replace(/\s+/g,' ').slice(0,72);
     return '<button class="notes-book-row" type="button" data-note-book="'+esc(g.bookId)+'">'+
       '<span class="notes-book-cover">'+cover+'</span>'+
       '<span class="notes-book-info"><strong>'+esc(b.title)+'</strong>'+
