@@ -19,6 +19,12 @@ Pages 地址（启用 Pages 后）：https://poorbug.github.io/reader/
 
 在仓库 **Settings → Pages → Build and deployment → Source** 选择 **GitHub Actions**，项目内 `.github/workflows/deploy.yml` 将通过 GitHub Actions 自动发布。
 
+## 应用更新
+
+设置 → 应用更新 → 检查更新：请求 `version.json` 的实时版本号，发现新版后更新 Service Worker 并预缓存资源；缓存准备完成才展示「刷新并使用新版」。刷新只更新站点代码，不主动清理 IndexedDB。
+
+**发布新版本时必须同步更新以下三处：** `app.js` 内的 `APP_VERSION`、`version.json` 中的 `version`、`sw.js` 内的 `VERSION` 和 `NAME`（增加缓存版本号）。部署完成后，旧页面才能正确识别并加载新版本。GitHub Pages 自动部署可能需要一段时间。
+
 ## 重要限制
 
 - 这是尚待实际 EPUB 文件与 iPhone Safari 真机验证的 MVP 原型，不能视为正式稳定版。
