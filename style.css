@@ -54,3 +54,9 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .immersive-reader .reading-settings .toc-item{display:block;width:100%;padding:13px 4px;text-align:left;background:transparent;border:0;border-bottom:1px solid color-mix(in srgb,var(--reader-fg) 18%,transparent);color:var(--reader-fg)}
 .immersive-reader #reader-back{color:var(--reader-fg,#333b34)!important;background:transparent;opacity:1}
 .immersive-reader .reader-top .icon-btn{color:var(--reader-fg,#333b34)}
+
+/* App update flow: keep status readable and the refresh action explicit. */
+.update-card #update-status{line-height:1.65;min-height:1.7em}
+.update-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.update-actions .btn:disabled{opacity:.6;cursor:wait}
+.update-actions [hidden]{display:none!important}
