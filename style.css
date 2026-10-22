@@ -141,3 +141,10 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 }
 .app .note{font-size:13px;line-height:1.65;opacity:.75}
 .app .note-text{font-size:17px;line-height:1.75;font-weight:500;color:#333b34}
+
+/* v1.0.26: outside-tap dismissal for inline notes (without reopening the toolbar). */
+.immersive-reader .inline-note-backdrop{
+ position:absolute;inset:0;z-index:106;pointer-events:auto;
+ background:rgba(0,0,0,.08);touch-action:manipulation;
+}
+.immersive-reader .inline-note-actions{z-index:110}
