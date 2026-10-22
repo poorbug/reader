@@ -1,6 +1,6 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#f6f0e5;color:#343b34;font-family:-apple-system,"PingFang SC",sans-serif}
-#status{padding:20px}#holder{position:absolute;inset:0}foliate-view{display:block;width:100%;height:100%;touch-action:pan-y pinch-zoom}
+#status{padding:20px}#holder{position:absolute;inset:0;width:100%;overflow:hidden}foliate-view{display:block;width:100%;height:100%;touch-action:pan-y pinch-zoom}
 </style></head><body><div id="status">正在等待 MOBI 文件…</div><div id="holder"></div><script type="module">
 let view,changing=false,lastChange=0;
 const status=document.getElementById('status');
@@ -44,8 +44,8 @@ window.addEventListener('message',async e=>{
   await view.open(new File([e.data.buffer],e.data.name,{type:'application/x-mobipocket-ebook'}));
   if(!view.renderer)throw Error('阅读引擎未初始化');
   view.renderer.setAttribute('flow','scrolled');
-  view.renderer.setAttribute('margin','16');
-  view.renderer.setAttribute('max-inline-size','680');
+  view.renderer.setAttribute('margin','0');
+  view.renderer.setAttribute('max-inline-size','9999');
   view.renderer.addEventListener('load',event=>wireTouch(event.detail?.doc));
   view.addEventListener('relocate',()=>{try{for(const x of view.renderer.getContents())wireTouch(x.doc)}catch{}});
   await view.goTo(0);
