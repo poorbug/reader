@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.22';
+const APP_VERSION='1.0.23';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='all',view='shelf',active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
@@ -131,6 +131,56 @@ function applyTheme(){if(!rendition)return;let [bg,fg]=palette[settings.theme];$
 function removePop(){$('.panel')?.remove();$('.read-tools')?.remove()}
 function showTools(){removePop();let p=document.createElement('div');p.className='read-tools';p.innerHTML='<div class="row">行距 <input type="range" min="1.3" max="2.5" step="0.1" value="'+settings.lineHeight+'" id="lineheight"></div><div class="row">字号 <input type="range" min="14" max="30" value="'+settings.size+'" id="fontsize"> <span id="size">'+settings.size+'</span></div><div class="row">'+Object.entries({paper:'纸张',white:'白色',green:'护眼',dark:'深色'}).map(([k,v])=>'<button class="btn ghost small" data-theme="'+k+'">'+v+'</button>').join('')+'</div><button class="btn ghost small" id="addmark">添加书签</button> ';$('#reader').append(p);$('#fontsize').oninput=e=>{settings.size=+e.target.value;$('#size').textContent=settings.size;applyTheme();saveSettings()};p.querySelectorAll('[data-theme]').forEach(x=>x.onclick=()=>{settings.theme=x.dataset.theme;applyTheme();saveSettings()});$('#lineheight').oninput=e=>{settings.lineHeight=+e.target.value;applyTheme();saveSettings()};$('#addmark').onclick=async()=>{let cfi=rendition.currentLocation()?.start?.cfi;if(cfi){await put('bookmarks',{id:id(),bookId:active.id,cfi,createdAt:now()});toast('书签已保存')}}}
 function showToc(){const p=$('#reading-settings');if(!p)return;if(!p.hidden&&p.dataset.kind==='toc'){closeReaderPanels();return}openReaderPanel('toc');p.innerHTML='<div class="setting-title">目录</div><div id="toc-entries" class="toc-entries">正在读取目录…</div>';if(active?.format==='epub'){const entries=$('#toc-entries');entries.innerHTML=toc.map((x,i)=>'<button class="toc-item" data-index="'+i+'">'+esc(x.label)+'</button>').join('')||'此书没有目录';entries.querySelectorAll('[data-index]').forEach(btn=>btn.onclick=async()=>{await rendition.display(toc[Number(btn.dataset.index)].href);closeReaderPanels()})}else if(active?.format==='mobi'){$('#document-body iframe')?.contentWindow?.postMessage({type:'MOBI_REQUEST_TOC'},location.origin)}else $('#toc-entries').textContent='PDF 暂不支持目录'}
+async function showBookNotes(){
+ const p=$('#reading-settings'),bookId=active?.id;
+ if(!p||!bookId)return;
+ if(!p.hidden&&p.dataset.kind==='notes'){closeReaderPanels();return}
+ openReaderPanel('notes');
+ p.innerHTML='<div class="setting-title">本书的划线与笔记</div><p class="muted">正在读取本地记录…</p>';
+ await renderBookNotes(bookId);
+}
+async function renderBookNotes(bookId){
+ const p=$('#reading-settings');
+ if(!p||p.hidden||p.dataset.kind!=='notes'||active?.id!==bookId)return;
+ let notes;
+ try{notes=(await all('highlights')).filter(h=>h.bookId===bookId).sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))}
+ catch(e){p.innerHTML='<div class="setting-title">本书的划线与笔记</div><p>读取失败，请稍后重试。</p>';console.error(e);return}
+ if(p.hidden||p.dataset.kind!=='notes'||active?.id!==bookId)return;
+ const scroll=p.scrollTop;
+ p.innerHTML='<div class="setting-title">本书的划线与笔记</div><p class="book-note-count">'+notes.length+' 条记录，保存在当前设备</p><div class="book-note-list">'+(notes.length?notes.map(h=>{
+  const located=(active.format||'epub')==='epub'&&!!h.cfi;
+  const date=h.createdAt?new Date(h.createdAt).toLocaleDateString('zh-CN'):'';
+  return '<article class="book-note-card" data-note-id="'+esc(h.id)+'"><div class="book-note-meta"><span>'+(h.note?'笔记':'划线')+'</span><time>'+esc(date)+'</time></div><blockquote class="book-note-quote">'+esc(h.text||'（未保存文字）')+'</blockquote>'+(h.note?'<div class="book-note-comment">'+esc(h.note)+'</div>':'')+'<div class="book-note-actions">'+(located?'<button class="book-note-action" data-act="jump">回到原文</button>':'<span class="book-note-unlocated">暂不支持定位</span>')+'<button class="book-note-action" data-act="edit">编辑</button><button class="book-note-action" data-act="copy">复制</button><button class="book-note-action" data-act="delete">删除</button></div></article>';
+ }).join(''):'<div class="book-note-empty">还没有划线或笔记。<br>在正文中长按选中文字，即可添加。</div>')+'</div>';
+ p.scrollTop=scroll;
+ p.querySelectorAll('[data-note-id]').forEach(card=>{
+  card.querySelectorAll('[data-act]').forEach(button=>button.onclick=async()=>{
+   const noteId=card.dataset.noteId,action=button.dataset.act;
+   const current=await get('highlights',noteId);
+   if(!current||current.bookId!==active?.id){toast('记录不存在');return}
+   if(action==='jump'){
+    if(!current.cfi||!rendition){toast('这条记录暂不支持跳转');return}
+    try{await rendition.display(current.cfi);closeReaderPanels();toggleReaderChrome(false)}
+    catch(e){console.error(e);toast('无法定位原文')}
+   }else if(action==='edit'){
+    const value=prompt('编辑这条摘录的笔记：',current.note||'');
+    if(value===null)return;
+    current.note=value;current.updatedAt=now();
+    try{await put('highlights',current);await renderBookNotes(bookId)}catch(e){console.error(e);toast('保存失败')}
+   }else if(action==='copy'){
+    try{await navigator.clipboard.writeText((current.text||'')+(current.note?'\n\n'+current.note:''));toast('已复制')}
+    catch{toast('复制失败，请检查剪贴板权限')}
+   }else if(action==='delete'){
+    if(!confirm('确定删除这条划线和笔记？'))return;
+    try{
+     await del('highlights',current.id);
+     if(current.cfi&&rendition){try{rendition.annotations.remove(current.cfi,'highlight')}catch(e){console.warn(e)}}
+     await renderBookNotes(bookId);toast('已删除')
+    }catch(e){console.error(e);toast('删除失败')}
+   }
+  });
+ });
+}
 function selectionMenu(){
  $('.selected-action')?.remove();if(!selection?.text)return;
  const el=document.createElement('div');el.className='selected-action';
@@ -169,9 +219,9 @@ async function saveHighlight(withNote){
 }
 async function showHighlights(){for(let h of (await all('highlights')).filter(x=>x.bookId===active?.id)){try{rendition.annotations.highlight(h.cfi,{},()=>{},'my-highlight',{fill:'#eac45a','fill-opacity':'0.35'})}catch{}}}
 
-function readerShell(title,content){return '<section class="reader immersive-reader" id="reader"><div class="reader-body reader-full">'+content+'</div><header class="reader-top reading-chrome" id="reader-top"><button class="icon-btn" id="reader-back" aria-label="返回">‹</button><span class="title">'+esc(title)+'</span><span style="width:38px"></span></header><footer class="reading-chrome reader-toolbar" id="reader-toolbar"><button id="reader-toc" aria-label="目录">☰<small>目录</small></button><button disabled aria-label="笔记稍后开放">✎<small>笔记</small></button><button disabled aria-label="进度稍后开放">◉<small>进度</small></button><button id="reader-colors" aria-label="颜色和亮度">☼<small>颜色</small></button><button id="reader-fonts" aria-label="字体和排版">A<small>字体</small></button></footer><div class="reading-dimmer" id="reading-dimmer"></div><div class="reading-settings" id="reading-settings" hidden></div></section>'}
-function closeReaderPanels(){const p=$('#reading-settings');if(p){p.hidden=true;p.dataset.kind=''}for(const k of ['toc','colors','fonts'])$('#reader-'+k)?.classList.remove('selected')}
-function openReaderPanel(kind){const p=$('#reading-settings');if(!p)return;p.hidden=false;p.dataset.kind=kind;for(const k of ['toc','colors','fonts'])$('#reader-'+k)?.classList.toggle('selected',k===kind)}
+function readerShell(title,content){return '<section class="reader immersive-reader" id="reader"><div class="reader-body reader-full">'+content+'</div><header class="reader-top reading-chrome" id="reader-top"><button class="icon-btn" id="reader-back" aria-label="返回">‹</button><span class="title">'+esc(title)+'</span><span style="width:38px"></span></header><footer class="reading-chrome reader-toolbar" id="reader-toolbar"><button id="reader-toc" aria-label="目录">☰<small>目录</small></button><button id="reader-notes" aria-label="查看本书划线和笔记">✎<small>笔记</small></button><button disabled aria-label="进度稍后开放">◉<small>进度</small></button><button id="reader-colors" aria-label="颜色和亮度">☼<small>颜色</small></button><button id="reader-fonts" aria-label="字体和排版">A<small>字体</small></button></footer><div class="reading-dimmer" id="reading-dimmer"></div><div class="reading-settings" id="reading-settings" hidden></div></section>'}
+function closeReaderPanels(){const p=$('#reading-settings');if(p){p.hidden=true;p.dataset.kind=''}for(const k of ['toc','notes','colors','fonts'])$('#reader-'+k)?.classList.remove('selected')}
+function openReaderPanel(kind){const p=$('#reading-settings');if(!p)return;p.hidden=false;p.dataset.kind=kind;for(const k of ['toc','notes','colors','fonts'])$('#reader-'+k)?.classList.toggle('selected',k===kind)}
 function toggleReaderChrome(show){const r=$('#reader');if(!r)return;const visible=show===undefined?!r.classList.contains('chrome-visible'):show;r.classList.toggle('chrome-visible',visible);if(!visible)closeReaderPanels()}
 function readerSettings(kind){const p=$('#reading-settings');if(!p)return;if(!p.hidden&&p.dataset.kind===kind){closeReaderPanels();return}openReaderPanel(kind);const colors=kind==='colors';p.innerHTML=colors?'<div class="setting-title">亮度与背景</div><label>亮度 <input id="reader-brightness" type="range" min="45" max="100" value="'+(settings.brightness??100)+'"></label><div class="theme-options">'+Object.entries({paper:'纸张',white:'白色',green:'护眼',dark:'夜间'}).map(([k,v])=>'<button class="theme-option '+(settings.theme===k?'selected':'')+'" aria-pressed="'+(settings.theme===k)+'" data-theme="'+k+'">'+v+'</button>').join('')+'</div>':'<div class="setting-title">字体与排版</div><label>字号 <input id="reader-size" type="range" min="14" max="32" value="'+settings.size+'"></label><label>行距 <input id="reader-lines" type="range" min="1.3" max="2.5" step="0.1" value="'+settings.lineHeight+'"></label><label>左右边距 <span id="margin-value">'+(settings.margin??18)+'px</span><input id="reader-margin" type="range" min="8" max="48" step="1" value="'+(settings.margin??18)+'"></label><label>段落间距 <input id="reader-paragraph" type="range" min="0" max="2" step="0.1" value="'+(settings.paragraph??0.8)+'"></label>';
 p.hidden=false;
@@ -188,7 +238,7 @@ function syncPageTheme(theme){
  document.querySelector('meta[name="theme-color"]')?.setAttribute('content',bg);
 }
 function updateReaderAppearance(){const r=$('#reader');if(!r)return;const [bg,fg]=palette[settings.theme]||palette.paper;r.style.background=bg;r.style.color=fg;r.style.setProperty('--reader-bg',bg);r.style.setProperty('--reader-fg',fg);r.dataset.theme=settings.theme;syncPageTheme(settings.theme);const d=$('#reading-dimmer');if(d)d.style.opacity=String((100-(settings.brightness||100))/100);if(active?.format==='epub')applyTheme()}
-function setupReaderChrome(onBack,format){$('#reader-back').onclick=onBack;$('#reader-toc').onclick=showToc;$('#reader-colors').onclick=()=>readerSettings('colors');$('#reader-fonts').onclick=()=>readerSettings('fonts');updateReaderAppearance();const surface=$('#reader .reader-full');let y=0,x=0;surface?.addEventListener('touchstart',e=>{if(e.touches.length===1){y=e.touches[0].clientY;x=e.touches[0].clientX}},{passive:true});surface?.addEventListener('touchmove',e=>{if(e.touches.length===1&&(Math.abs(e.touches[0].clientY-y)>12||Math.abs(e.touches[0].clientX-x)>12))toggleReaderChrome(false)},{passive:true});surface?.addEventListener('wheel',()=>toggleReaderChrome(false),{passive:true})}
+function setupReaderChrome(onBack,format){$('#reader-back').onclick=onBack;$('#reader-toc').onclick=showToc;$('#reader-notes').onclick=showBookNotes;$('#reader-colors').onclick=()=>readerSettings('colors');$('#reader-fonts').onclick=()=>readerSettings('fonts');updateReaderAppearance();const surface=$('#reader .reader-full');let y=0,x=0;surface?.addEventListener('touchstart',e=>{if(e.touches.length===1){y=e.touches[0].clientY;x=e.touches[0].clientX}},{passive:true});surface?.addEventListener('touchmove',e=>{if(e.touches.length===1&&(Math.abs(e.touches[0].clientY-y)>12||Math.abs(e.touches[0].clientX-x)>12))toggleReaderChrome(false)},{passive:true});surface?.addEventListener('wheel',()=>toggleReaderChrome(false),{passive:true})}
 window.addEventListener('message',e=>{if(e.origin===location.origin&&e.data?.type==='READER_TAP')toggleReaderChrome();if(e.origin===location.origin&&e.data?.type==='READER_SCROLL')toggleReaderChrome(false)});
 window.addEventListener('message',e=>{if(e.origin!==location.origin||e.data?.type!=='MOBI_TOC_ENTRIES'||!active||active.format!=='mobi')return;const p=$('#reading-settings');if(p?.hidden||p.dataset.kind!=='toc')return;const entries=$('#toc-entries');if(!entries)return;const arr=Array.isArray(e.data.entries)?e.data.entries:[];entries.innerHTML=arr.length?arr.map((x,i)=>'<button class="toc-item" data-index="'+i+'">'+esc(x.label)+'</button>').join(''):'此书没有目录';entries.querySelectorAll('[data-index]').forEach(x=>x.onclick=()=>{$('#document-body iframe')?.contentWindow?.postMessage({type:'MOBI_GOTO_TOC',index:Number(x.dataset.index)},location.origin);closeReaderPanels()})});
 window.addEventListener('message',async e=>{if(e.origin!==location.origin||!active||active.format!=='mobi')return;const d=e.data;if(d?.type==='CUSTOM_COPY_TEXT'){try{await navigator.clipboard.writeText(d.text)}catch{}return}if(d?.type!=='MOBI_CUSTOM_SELECTION'||!d.text)return;let note='';if(d.action==='note'){const v=prompt('记录这段文字的想法：','');if(v===null)return;note=v}if(d.action==='highlight'||d.action==='note'){await put('highlights',{id:id(),bookId:active.id,text:d.text,note,cfi:null,createdAt:now(),source:'mobi-selection'});toast('已保存'+(note?'笔记':'摘录')+'（暂不支持跳转定位）')}});
