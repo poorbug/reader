@@ -71,3 +71,28 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 }
 .immersive-reader .selected-action button{padding:9px 12px;border-radius:9px;flex:1;font-size:15px}
 .immersive-reader .selected-action button:active{background:#ffffff25}
+
+/* v1.0.23: subtle reader chrome boundaries that adapt to the active theme. */
+.immersive-reader .reader-top.reading-chrome{
+ border-bottom:1px solid rgba(120,130,130,.3);
+ border-bottom-color:color-mix(in srgb,var(--reader-fg,#333b34) 20%,transparent);
+}
+.immersive-reader .reader-toolbar.reading-chrome{
+ border-top:1px solid rgba(120,130,130,.3);
+ border-top-color:color-mix(in srgb,var(--reader-fg,#333b34) 20%,transparent);
+}
+/* Book-scoped notes share the existing chapter/color/font panel. */
+.immersive-reader .book-note-count{font-size:12px;opacity:.7;margin:7px 0 15px}
+.immersive-reader .book-note-list{display:grid;gap:11px}
+.immersive-reader .book-note-card{
+ border:1px solid color-mix(in srgb,var(--reader-fg,#333b34) 19%,transparent);
+ border-radius:12px;padding:13px;background:color-mix(in srgb,var(--reader-fg,#333b34) 4%,transparent);
+ color:var(--reader-fg,#333b34);min-width:0;
+}
+.immersive-reader .book-note-meta{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:12px;opacity:.72;margin-bottom:10px}
+.immersive-reader .book-note-quote{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.75;border-left:3px solid #85aa9a;padding-left:10px}
+.immersive-reader .book-note-comment{margin-top:12px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.7}
+.immersive-reader .book-note-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:13px}
+.immersive-reader .book-note-action{border:0;border-radius:7px;padding:8px 9px;background:color-mix(in srgb,var(--reader-fg,#333b34) 11%,transparent);color:inherit;font-size:12px}
+.immersive-reader .book-note-unlocated{font-size:11px;opacity:.65}
+.immersive-reader .book-note-empty{text-align:center;line-height:2;padding:32px 10px;opacity:.72}
