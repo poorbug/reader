@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.20';
+const APP_VERSION='1.0.21';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='all',view='shelf',active=null,epub=null,rendition=null,toc=[],selection=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
@@ -13,7 +13,70 @@ function toast(s){$('.toast')?.remove();let e=document.createElement('div');e.cl
 async function refresh(){books=(await all('books')).sort((a,b)=>String(b.lastRead||b.createdAt).localeCompare(String(a.lastRead||a.createdAt)));render()}
 function shell(body){app.innerHTML='<main class="app"><header class="top"><div><div class="eyebrow">MY READING SPACE</div><h1>'+({shelf:'我的书架',notes:'阅读笔记',settings:'设置'}[view])+'</h1></div>'+(view==='shelf'?'<button class="btn" id="add">＋ 导入</button>':'')+'</header>'+body+'</main><nav class="bottom">'+[['shelf','▤','书架'],['notes','✎','笔记'],['settings','⚙','设置']].map(x=>'<button class="nav '+(view===x[0]?'active':'')+'" data-nav="'+x[0]+'"><span>'+x[1]+'</span>'+x[2]+'</button>').join('')+'</nav><input type="file" accept=".epub,.pdf,.mobi,application/epub+zip,application/pdf,application/x-mobipocket-ebook" multiple hidden id="picker">';
 document.querySelectorAll('[data-nav]').forEach(e=>e.onclick=()=>{view=e.dataset.nav;render()});$('#add')?.addEventListener('click',showImportOptions);$('#picker').onchange=e=>importFiles(e.target.files)}
-function render(){if(active)return;if(view==='shelf'){const filtered=books.filter(b=>tab==='all'||b.status===tab);shell('<p class="muted">'+books.length+' 本书 · 所有书籍仅保存于当前设备</p><div class="tabs">'+[['all','全部'],['reading','在读'],['finished','已读'],['archived','归档']].map(x=>'<button class="tab '+(tab===x[0]?'active':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+(filtered.length?'<section class="books">'+filtered.map(b=>'<article class="book" data-book="'+b.id+'"><div class="cover">'+(b.cover?'<img alt="" src="'+b.cover+'">':esc(b.title))+'</div><div class="book-title">'+esc(b.title)+'</div><div class="book-author">'+esc(b.author||'未知作者')+'</div><div class="progress"><div style="width:'+Math.round((b.percent||0)*100)+'%"></div></div><div class="actions"><button class="btn ghost small" data-manage="'+b.id+'">管理</button></div></article>').join('')+'</section>':'<div class="empty"><div class="big">▤</div><h2>你的书架还是空的</h2><p>导入 EPUB 开始阅读</p><button class="btn" id="empty-add">导入电子书</button></div>'));document.querySelectorAll('[data-tab]').forEach(e=>e.onclick=()=>{tab=e.dataset.tab;render()});document.querySelectorAll('[data-book]').forEach(e=>e.onclick=ev=>{if(!ev.target.closest('button'))openReader(e.dataset.book)});document.querySelectorAll('[data-manage]').forEach(e=>e.onclick=()=>manage(e.dataset.manage));$('#empty-add')?.addEventListener('click',showImportOptions)}else if(view==='notes')notesPage();else{shell('<div class="card"><h2>本地书库与备份</h2><p class="muted">电子书、进度、笔记保存在 IndexedDB；清理网站数据可能丢失，请定期备份。</p><button class="btn" id="export">导出完整备份</button> <button class="btn ghost" id="import-backup">恢复备份</button><input type="file" accept=".json" hidden id="backup-picker"></div><div class="card"><h2>关于纸间</h2><p><strong>当前版本：v'+APP_VERSION+'</strong></p><p>无需账号 · 无服务器上传 · 可离线阅读</p><p class="muted">首次打开请保持联网，待应用资源缓存后再断网测试。</p></div>');$('#export').onclick=backup;$('#import-backup').onclick=()=>$('#backup-picker').click();$('#backup-picker').onchange=e=>restore(e.target.files[0])}}
+function render(){if(active)return;if(view==='shelf'){const filtered=books.filter(b=>tab==='all'||b.status===tab);shell('<p class="muted">'+books.length+' 本书 · 所有书籍仅保存于当前设备</p><div class="tabs">'+[['all','全部'],['reading','在读'],['finished','已读'],['archived','归档']].map(x=>'<button class="tab '+(tab===x[0]?'active':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+(filtered.length?'<section class="books">'+filtered.map(b=>'<article class="book" data-book="'+b.id+'"><div class="cover">'+(b.cover?'<img alt="" src="'+b.cover+'">':esc(b.title))+'</div><div class="book-title">'+esc(b.title)+'</div><div class="book-author">'+esc(b.author||'未知作者')+'</div><div class="progress"><div style="width:'+Math.round((b.percent||0)*100)+'%"></div></div><div class="actions"><button class="btn ghost small" data-manage="'+b.id+'">管理</button></div></article>').join('')+'</section>':'<div class="empty"><div class="big">▤</div><h2>你的书架还是空的</h2><p>导入 EPUB 开始阅读</p><button class="btn" id="empty-add">导入电子书</button></div>'));document.querySelectorAll('[data-tab]').forEach(e=>e.onclick=()=>{tab=e.dataset.tab;render()});document.querySelectorAll('[data-book]').forEach(e=>e.onclick=ev=>{if(!ev.target.closest('button'))openReader(e.dataset.book)});document.querySelectorAll('[data-manage]').forEach(e=>e.onclick=()=>manage(e.dataset.manage));$('#empty-add')?.addEventListener('click',showImportOptions)}else if(view==='notes')notesPage();else{shell('<div class="card"><h2>本地书库与备份</h2><p class="muted">电子书、进度、笔记保存在 IndexedDB；清理网站数据可能丢失，请定期备份。</p><button class="btn" id="export">导出完整备份</button> <button class="btn ghost" id="import-backup">恢复备份</button><input type="file" accept=".json" hidden id="backup-picker"></div><div class="card update-card"><h2>应用更新</h2><p class="muted">当前运行版本：<strong>v'+APP_VERSION+'</strong></p><p id="update-status" class="muted" role="status" aria-live="polite">点击按钮检查 GitHub Pages 上的最新版本。</p><div class="update-actions"><button class="btn" id="check-update">检查更新</button><button class="btn ghost" id="refresh-update" hidden>刷新并使用新版</button></div><p class="muted">仅更新阅读器程序，不会主动删除本地书籍和笔记。</p></div><div class="card"><h2>关于纸间</h2><p><strong>当前版本：v'+APP_VERSION+'</strong></p><p>无需账号 · 无服务器上传 · 可离线阅读</p><p class="muted">首次打开请保持联网，待应用资源缓存后再断网测试。</p></div>');$('#export').onclick=backup;$('#import-backup').onclick=()=>$('#backup-picker').click();$('#backup-picker').onchange=e=>restore(e.target.files[0]);$('#check-update').onclick=checkForAppUpdates;$('#refresh-update').onclick=()=>window.location.reload();paintUpdateStatus()}}
+const updateState={checking:false,ready:false,remoteVersion:null,message:'点击检查更新，从 GitHub Pages 获取最新版本。'};
+function paintUpdateStatus(){
+ const msg=$('#update-status'),check=$('#check-update'),reload=$('#refresh-update');
+ if(!msg||!check||!reload)return;
+ msg.textContent=updateState.message;
+ check.disabled=updateState.checking;
+ check.textContent=updateState.checking?'检查中…':'检查更新';
+ reload.hidden=!updateState.ready;
+ if(updateState.ready)reload.textContent='刷新并使用 v'+updateState.remoteVersion;
+}
+function newerVersion(remote,local){
+ const a=String(remote).split('.').map(Number),b=String(local).split('.').map(Number);
+ if(a.some(x=>!Number.isFinite(x))||b.some(x=>!Number.isFinite(x)))return remote!==local;
+ for(let i=0;i<Math.max(a.length,b.length);i++){if((a[i]||0)!==(b[i]||0))return (a[i]||0)>(b[i]||0)}
+ return false;
+}
+function workerReleaseVersion(worker){
+ if(!worker||typeof MessageChannel==='undefined')return Promise.resolve(null);
+ return new Promise(resolve=>{
+  let finished=false;const channel=new MessageChannel();
+  const done=value=>{if(finished)return;finished=true;channel.port1.close();resolve(value)};
+  const timer=setTimeout(()=>done(null),650);
+  channel.port1.onmessage=e=>{clearTimeout(timer);done(e.data?.version||null)};
+  try{worker.postMessage({type:'ZHJ_GET_VERSION'},[channel.port2])}catch{clearTimeout(timer);done(null)}
+ });
+}
+async function waitForPreparedRelease(reg,expected){
+ for(let i=0;i<14;i++){
+  const version=await workerReleaseVersion(reg.active);
+  if(version===expected)return true;
+  await new Promise(resolve=>setTimeout(resolve,650));
+ }
+ return false;
+}
+async function checkForAppUpdates(){
+ if(updateState.checking)return;
+ updateState.checking=true;updateState.ready=false;updateState.message='正在检查 GitHub Pages 上的最新版本…';paintUpdateStatus();
+ try{
+  if(!navigator.onLine)throw Error('当前没有网络连接，请联网后重试。');
+  const res=await fetch('./version.json?check='+Date.now(),{cache:'no-store'});
+  if(!res.ok)throw Error('无法获取版本信息（HTTP '+res.status+'）。');
+  const info=await res.json();const latest=String(info.version||'').trim();
+  if(!/^\d+\.\d+\.\d+$/.test(latest))throw Error('远程版本信息格式不正确。');
+  updateState.remoteVersion=latest;
+  if(!newerVersion(latest,APP_VERSION)){
+   updateState.message=latest===APP_VERSION?'当前已是最新版本（v'+APP_VERSION+'）。':'当前运行 v'+APP_VERSION+'，服务器发布 v'+latest+'，暂无更新。';
+   return;
+  }
+  if(!('serviceWorker' in navigator))throw Error('此浏览器不支持自动更新，请使用 Safari 刷新网站。');
+  updateState.message='发现新版本 v'+latest+'，正在下载并准备离线资源…';paintUpdateStatus();
+  let reg=await navigator.serviceWorker.getRegistration('./');
+  if(!reg)reg=await navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'});
+  await reg.update();
+  if(await waitForPreparedRelease(reg,latest)){
+   updateState.ready=true;
+   updateState.message='新版本 v'+latest+' 已准备好。点击下方按钮刷新后生效。';
+  }else{
+   updateState.message='检测到 v'+latest+'，但新版本尚未准备完成。请稍后再次检查更新。';
+  }
+ }catch(err){
+  updateState.message='检查更新失败：'+(err?.message||'网络或缓存异常')+' 原有阅读数据不受影响。';
+ }finally{updateState.checking=false;paintUpdateStatus()}
+}
 function showImportOptions(){
   document.querySelector('#import-dialog')?.remove();
   let overlay=document.createElement('div');overlay.id='import-dialog';overlay.className='import-overlay';
