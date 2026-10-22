@@ -84,7 +84,7 @@ function drawMobiAnnotations(){
   let drawn=notesDrawn.get(section.doc);
   if(!drawn){drawn=new Set();notesDrawn.set(section.doc,drawn)}
   for(const note of noteMap.values()){
-   if(!note.cfi||!note.note?.trim()||drawn.has(note.cfi))continue;
+   if(!note.cfi||drawn.has(note.cfi))continue;
    try{
     if(view.resolveNavigation(note.cfi)?.index!==section.index)continue;
     drawn.add(note.cfi);
@@ -102,8 +102,8 @@ function updateMobiNote(note){
  if(!note?.id)return;
  const prior=noteMap.get(note.id);
  if(prior?.cfi&&prior.cfi!==note.cfi)removeMobiNote(prior);
- if(note.note?.trim())noteMap.set(note.id,note);else{noteMap.delete(note.id);removeMobiNote(prior||note)}
- if(note.note?.trim()&&!note.cfi&&view?.renderer){try{for(const item of view.renderer.getContents())locateLegacyMobiNotes(item.doc,item.index)}catch{}}
+ noteMap.set(note.id,note);
+ if(!note.cfi&&view?.renderer){try{for(const item of view.renderer.getContents())locateLegacyMobiNotes(item.doc,item.index)}catch{}}
  scheduleNoteDrawing();
 }
 function legacyQuoteRange(doc,quote){
@@ -125,7 +125,7 @@ function legacyQuoteRange(doc,quote){
 function locateLegacyMobiNotes(doc,index){
  if(!view||typeof index!=='number')return;
  for(const note of noteMap.values()){
-  if(note.cfi||!note.note?.trim())continue;
+  if(note.cfi)continue;
   const range=legacyQuoteRange(doc,note.text);
   if(!range)continue;
   try{
@@ -174,7 +174,7 @@ window.addEventListener('message',async e=>{
  if(e.data?.type==='MOBI_GOTO_TOC'){const entry=window.__tocEntries?.[e.data.index];if(entry)try{await view.goTo(entry.href)}catch(err){console.warn(err)}return}
  if(e.data?.type==='MOBI_SET_PREFS'){prefs={...prefs,...e.data.prefs};applyPrefs();return}
  if(e.data?.type!=='OPEN_MOBI')return;
- bookId=e.data.bookId;noteMap=new Map((e.data.notes||[]).filter(h=>h.id&&h.note?.trim()).map(h=>[h.id,h]));initialCFI=e.data.cfi||null;initialSection=e.data.sectionIndex??null;prefs={...prefs,...(e.data.prefs||{})};document.getElementById('size').value=prefs.size;document.getElementById('lineHeight').value=prefs.lineHeight;document.getElementById('theme').value=prefs.theme;
+ bookId=e.data.bookId;noteMap=new Map((e.data.notes||[]).filter(h=>h.id).map(h=>[h.id,h]));initialCFI=e.data.cfi||null;initialSection=e.data.sectionIndex??null;prefs={...prefs,...(e.data.prefs||{})};document.getElementById('size').value=prefs.size;document.getElementById('lineHeight').value=prefs.lineHeight;document.getElementById('theme').value=prefs.theme;
  try{
   status.textContent='正在加载 MOBI 阅读引擎…';
   await import('https://cdn.jsdelivr.net/gh/johnfactotum/foliate-js@main/view.js');
@@ -188,7 +188,7 @@ window.addEventListener('message',async e=>{
   view.renderer.setAttribute('max-inline-size','1000px');
   view.addEventListener('draw-annotation',event=>{try{event.detail.draw(underlinedRects)}catch(err){console.warn(err)}});
   view.addEventListener('show-annotation',event=>{
-   const note=[...noteMap.values()].find(h=>h.cfi===event.detail?.value&&h.note?.trim());
+   const note=[...noteMap.values()].find(h=>h.cfi===event.detail?.value);
    if(note)parent.postMessage({type:'MOBI_INLINE_NOTE',noteId:note.id},location.origin);
   });
   view.renderer.addEventListener('load',event=>{
