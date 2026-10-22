@@ -2,7 +2,7 @@
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#f6f0e5;color:#343b34;font-family:-apple-system,"PingFang SC",sans-serif}
 #status{padding:20px}#holder{position:absolute;inset:0;width:100%;overflow:hidden}#menu-toggle{position:fixed;z-index:20;right:12px;bottom:18px;border:0;border-radius:24px;padding:10px 15px;background:#4b8174;color:white}#menu,#toc-panel{position:fixed;z-index:21;bottom:65px;left:12px;right:12px;max-height:65%;overflow:auto;padding:16px;background:var(--mobi-bg,#f6f0e5);color:var(--mobi-fg,#343b34);box-shadow:0 4px 25px #0003;border-radius:14px}#menu[hidden],#toc-panel[hidden]{display:none}.toc-row{display:block;padding:13px 8px;width:100%;background:transparent;color:inherit;border:0;text-align:left;border-bottom:1px solid currentColor}#menu label{display:block;margin:12px 0}#menu input{width:100%}foliate-view{display:block;width:100%;height:100%;touch-action:pan-y}
 </style></head><body><div id="status">正在等待 MOBI 文件…</div><div id="holder"></div><button id="menu-toggle" hidden aria-label="阅读设置">Aa</button><div id="menu" hidden><button id="toc-toggle">目录</button><button id="close-menu">关闭</button><label>字号 <input id="size" type="range" min="14" max="32" value="18"></label><label>行距 <input id="lineHeight" type="range" min="1.3" max="2.5" step="0.1" value="1.8"></label><label>背景 <select id="theme"><option value="paper">纸张</option><option value="white">白色</option><option value="green">护眼</option><option value="dark">夜间</option></select></label></div><div id="toc-panel" hidden></div><script src="./selection.js"></script><script type="module">
-let view,changing=false,lastChange=0,bookId=null,initialSection=null,initialCFI=null,prefs={size:18,lineHeight:1.8,theme:'paper'};
+let view,changing=false,lastChange=0,bookId=null,initialSection=null,initialCFI=null,noteMap=new Map(),notesDrawn=new WeakMap(),noteDrawTimer=null,prefs={size:18,lineHeight:1.8,theme:'paper'};
 const themes={paper:['#f6f0e5','#333b34'],white:['#ffffff','#222222'],green:['#e6eee6','#294034'],dark:['#26292b','#eeeeee']};
 function applyPrefs(){if(!view?.renderer)return;const [bg,fg]=themes[prefs.theme]||themes.paper;document.body.style.background=bg;document.body.style.color=fg;document.documentElement.style.setProperty('--mobi-bg',bg);document.documentElement.style.setProperty('--mobi-fg',fg);view.renderer.setStyles?.(`html,body{background:${bg}!important;color:${fg}!important;font-size:${prefs.size}px!important;line-height:${prefs.lineHeight}!important} body{padding-inline:${prefs.margin||18}px!important;box-sizing:border-box!important} p{margin-bottom:${prefs.paragraph??0.8}em!important} h1,h1 *, .chapter-title,.chapter-title *{font-size:${Math.min(40,Math.max(20,Math.round(prefs.size*1.4)))}px!important;line-height:1.5!important;overflow-wrap:anywhere!important}h2,h2 *{font-size:${Math.round(prefs.size*1.2)}px!important;line-height:1.5!important}h3,h3 *{font-size:${Math.round(prefs.size*1.1)}px!important;line-height:1.5!important}`);normalizeBookHeadings();fixLegacyMobiTitles()}
 function normalizeBookHeadings(){
@@ -62,9 +62,80 @@ async function switchSection(dir){
  try{if(dir>0)await view.next();else await view.prev();lastChange=Date.now()}finally{changing=false}
 }
 // Custom touch selection: no Safari selection menu. Highlight using overlay rectangles.
+function underlinedRects(rects){
+ const group=document.createElementNS('http://www.w3.org/2000/svg','g');
+ group.setAttribute('fill','#5a9d8b');
+ for(const r of rects){
+  const line=document.createElementNS('http://www.w3.org/2000/svg','rect');
+  line.setAttribute('x',String(r.left));
+  line.setAttribute('y',String(r.bottom-2.5));
+  line.setAttribute('width',String(r.width));
+  line.setAttribute('height','2.5');
+  group.append(line);
+ }
+ return group;
+}
+function scheduleNoteDrawing(){clearTimeout(noteDrawTimer);noteDrawTimer=setTimeout(drawMobiAnnotations,120)}
+function drawMobiAnnotations(){
+ if(!view?.renderer)return;
+ const sections=[];try{sections.push(...view.renderer.getContents())}catch{return}
+ for(const section of sections){
+  if(!section.doc||typeof section.index!=='number')continue;
+  let drawn=notesDrawn.get(section.doc);
+  if(!drawn){drawn=new Set();notesDrawn.set(section.doc,drawn)}
+  for(const note of noteMap.values()){
+   if(!note.cfi||!note.note?.trim()||drawn.has(note.cfi))continue;
+   try{
+    if(view.resolveNavigation(note.cfi)?.index!==section.index)continue;
+    drawn.add(note.cfi);
+    Promise.resolve(view.addAnnotation({value:note.cfi})).catch(err=>{drawn.delete(note.cfi);console.warn('MOBI annotation draw failed',err)});
+   }catch(err){console.warn('Cannot render note in current section',err)}
+  }
+ }
+}
+function removeMobiNote(note){
+ if(!view||!note?.cfi)return;
+ try{view.deleteAnnotation({value:note.cfi})?.catch?.(console.warn)}catch(err){console.warn(err)}
+ try{for(const content of view.renderer.getContents())notesDrawn.get(content.doc)?.delete(note.cfi)}catch{}
+}
+function updateMobiNote(note){
+ if(!note?.id)return;
+ const prior=noteMap.get(note.id);
+ if(prior?.cfi&&prior.cfi!==note.cfi)removeMobiNote(prior);
+ if(note.note?.trim())noteMap.set(note.id,note);else{noteMap.delete(note.id);removeMobiNote(note)}
+ scheduleNoteDrawing();
+}
+function legacyQuoteRange(doc,quote){
+ if(!doc?.body||!quote||quote.length<12||quote.length>350)return null;
+ const walker=doc.createTreeWalker(doc.body,NodeFilter.SHOW_TEXT);
+ const nodes=[];let text='',n;
+ while((n=walker.nextNode())&&text.length<700000){
+  if(n.parentElement?.closest('script,style,svg,[data-zhj-selection-overlay]'))continue;
+  const value=n.nodeValue||'';if(!value)continue;
+  nodes.push({node:n,offset:text.length,length:value.length});text+=value;
+ }
+ const found=text.indexOf(quote);if(found<0||text.indexOf(quote,found+1)!==-1)return null;
+ const last=found+quote.length;
+ const start=nodes.find(x=>x.offset<=found&&x.offset+x.length>found);
+ const end=nodes.find(x=>x.offset<last&&x.offset+x.length>=last);
+ if(!start||!end)return null;
+ try{const range=doc.createRange();range.setStart(start.node,found-start.offset);range.setEnd(end.node,last-end.offset);return range}catch{return null}
+}
+function locateLegacyMobiNotes(doc,index){
+ if(!view||typeof index!=='number')return;
+ for(const note of noteMap.values()){
+  if(note.cfi||!note.note?.trim())continue;
+  const range=legacyQuoteRange(doc,note.text);
+  if(!range)continue;
+  try{
+   const cfi=view.getCFI(index,range);
+   if(cfi){note.cfi=cfi;noteMap.set(note.id,note);parent.postMessage({type:'MOBI_NOTE_LOCATED',noteId:note.id,cfi},location.origin)}
+  }catch(err){console.warn('Cannot locate older note',err)}
+ }
+}
 function wireTouch(doc){
  if(!doc||doc.__zhijianSwipe)return;
- doc.__zhijianSwipe=true;const controller=window.ZhijianSelection?.install(doc,{onChange:detail=>{parent.postMessage({type:'ZHJ_SELECTION',format:'mobi',text:detail?.text||''},location.origin)}});
+ doc.__zhijianSwipe=true;const controller=window.ZhijianSelection?.install(doc,{onChange:detail=>{{let cfi=null;if(detail?.range&&view){try{const match=view.renderer.getContents().find(x=>x.doc===doc);if(match)cfi=view.getCFI(match.index,detail.range)}catch(err){console.warn('MOBI selection location unavailable',err)}}parent.postMessage({type:'ZHJ_SELECTION',format:'mobi',text:detail?.text||'',cfi},location.origin)}}});
  doc.documentElement.style.touchAction='pan-y';doc.documentElement.style.webkitTouchCallout='none';doc.body.style.webkitTouchCallout='none';doc.addEventListener('contextmenu',e=>e.preventDefault());
  doc.addEventListener('touchmove',()=>{if(!doc.__zhijianSelecting)parent.postMessage({type:'READER_SCROLL'},location.origin)},{passive:true});
  doc.addEventListener('wheel',()=>parent.postMessage({type:'READER_SCROLL'},location.origin),{passive:true});
@@ -94,12 +165,15 @@ function wireTouch(doc){
 }
 window.addEventListener('message',async e=>{
  if(e.origin!==location.origin)return;
+ if(e.data?.type==='MOBI_NOTE_UPSERT'){updateMobiNote(e.data.note);return}
+ if(e.data?.type==='MOBI_NOTE_REMOVE'){const note=e.data.note;if(note){removeMobiNote(note);noteMap.delete(note.id)}return}
+ if(e.data?.type==='MOBI_GOTO_CFI'){if(e.data.cfi&&view)try{await view.goTo(e.data.cfi)}catch(err){console.warn(err)}return}
  if(e.data?.type==='ZHJ_CLEAR_SELECTION'){try{for(const x of view?.renderer?.getContents()||[])x.doc?.__zhjSelectionApi?.clear()}catch{}return}
  if(e.data?.type==='MOBI_REQUEST_TOC'){const entries=[];const flatten=items=>{for(const item of items||[]){entries.push({label:item.label||'章节',href:item.href});flatten(item.subitems)}};flatten(view?.book?.toc||[]);window.__tocEntries=entries;parent.postMessage({type:'MOBI_TOC_ENTRIES',entries:entries.map(x=>({label:x.label}))},location.origin);return}
  if(e.data?.type==='MOBI_GOTO_TOC'){const entry=window.__tocEntries?.[e.data.index];if(entry)try{await view.goTo(entry.href)}catch(err){console.warn(err)}return}
  if(e.data?.type==='MOBI_SET_PREFS'){prefs={...prefs,...e.data.prefs};applyPrefs();return}
  if(e.data?.type!=='OPEN_MOBI')return;
- bookId=e.data.bookId;initialCFI=e.data.cfi||null;initialSection=e.data.sectionIndex??null;prefs={...prefs,...(e.data.prefs||{})};document.getElementById('size').value=prefs.size;document.getElementById('lineHeight').value=prefs.lineHeight;document.getElementById('theme').value=prefs.theme;
+ bookId=e.data.bookId;noteMap=new Map((e.data.notes||[]).filter(h=>h.id&&h.note?.trim()).map(h=>[h.id,h]));initialCFI=e.data.cfi||null;initialSection=e.data.sectionIndex??null;prefs={...prefs,...(e.data.prefs||{})};document.getElementById('size').value=prefs.size;document.getElementById('lineHeight').value=prefs.lineHeight;document.getElementById('theme').value=prefs.theme;
  try{
   status.textContent='正在加载 MOBI 阅读引擎…';
   await import('https://cdn.jsdelivr.net/gh/johnfactotum/foliate-js@main/view.js');
@@ -111,12 +185,24 @@ window.addEventListener('message',async e=>{
   view.renderer.setAttribute('margin','0px');
   view.renderer.setAttribute('gap','4%');
   view.renderer.setAttribute('max-inline-size','1000px');
-  view.renderer.addEventListener('load',event=>{wireTouch(event.detail?.doc);requestAnimationFrame(()=>{normalizeBookHeadings();fixLegacyMobiTitles()})});
-  view.addEventListener('relocate',ev=>{try{for(const x of view.renderer.getContents())wireTouch(x.doc)}catch{}report(ev.detail)});
+  view.addEventListener('draw-annotation',event=>{try{event.detail.draw(underlinedRects)}catch(err){console.warn(err)}});
+  view.addEventListener('show-annotation',event=>{
+   const note=[...noteMap.values()].find(h=>h.cfi===event.detail?.value&&h.note?.trim());
+   if(note)parent.postMessage({type:'MOBI_INLINE_NOTE',noteId:note.id},location.origin);
+  });
+  view.renderer.addEventListener('load',event=>{
+   wireTouch(event.detail?.doc);
+   requestAnimationFrame(()=>{
+    normalizeBookHeadings();fixLegacyMobiTitles();
+    locateLegacyMobiNotes(event.detail?.doc,event.detail?.index);
+    scheduleNoteDrawing();
+   });
+  });
+  view.addEventListener('relocate',ev=>{try{for(const x of view.renderer.getContents())wireTouch(x.doc)}catch{}report(ev.detail);scheduleNoteDrawing()});
   applyPrefs();
   try{if(initialCFI)await view.goTo(initialCFI);else if(initialSection!==null)await view.goTo(initialSection);else await view.goTo(0)}catch{await view.goTo(0)}
   // Chapter navigation is rendered by the parent unified reader panel.
-  for(const x of view.renderer.getContents())wireTouch(x.doc);normalizeBookHeadings();fixLegacyMobiTitles();
+  for(const x of view.renderer.getContents()){wireTouch(x.doc);locateLegacyMobiNotes(x.doc,x.index)}normalizeBookHeadings();fixLegacyMobiTitles();scheduleNoteDrawing();
   status.remove();
  }catch(err){console.error(err);status.textContent='MOBI 打开失败：'+err.message}
 });
