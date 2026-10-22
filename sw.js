@@ -1,5 +1,5 @@
-const NAME='zhijian-reader-v25';
-const VERSION='1.0.25';
+const NAME='zhijian-reader-v26';
+const VERSION='1.0.26';
 const CORE=['./','./index.html','./style.css','./app.js','./icon.svg','./manifest.webmanifest','./mobi-reader.html','./selection.js','./version.json'];
 const EXTERNAL=['https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js','https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js'];
 self.addEventListener('install',event=>{
