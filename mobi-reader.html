@@ -1,9 +1,14 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><style>
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#f6f0e5;color:#343b34;font-family:-apple-system,"PingFang SC",sans-serif}
-#status{padding:20px}#holder{position:absolute;inset:0;width:100%;overflow:hidden}foliate-view{display:block;width:100%;height:100%;touch-action:pan-y}
-</style></head><body><div id="status">正在等待 MOBI 文件…</div><div id="holder"></div><script type="module">
-let view,changing=false,lastChange=0;
+#status{padding:20px}#holder{position:absolute;inset:0;width:100%;overflow:hidden}#menu-toggle{position:fixed;z-index:20;right:12px;bottom:18px;border:0;border-radius:24px;padding:10px 15px;background:#4b8174;color:white}#menu,#toc-panel{position:fixed;z-index:21;bottom:65px;left:12px;right:12px;max-height:65%;overflow:auto;padding:16px;background:#fff;color:#303b33;box-shadow:0 4px 25px #0003;border-radius:14px}#menu[hidden],#toc-panel[hidden]{display:none}.toc-row{display:block;padding:13px 8px;width:100%;background:none;border:0;text-align:left;border-bottom:1px solid #ddd}#menu label{display:block;margin:12px 0}#menu input{width:100%}foliate-view{display:block;width:100%;height:100%;touch-action:pan-y}
+</style></head><body><div id="status">正在等待 MOBI 文件…</div><div id="holder"></div><button id="menu-toggle" aria-label="阅读设置">Aa</button><div id="menu" hidden><button id="toc-toggle">目录</button><button id="close-menu">关闭</button><label>字号 <input id="size" type="range" min="14" max="32" value="18"></label><label>行距 <input id="lineHeight" type="range" min="1.3" max="2.5" step="0.1" value="1.8"></label><label>背景 <select id="theme"><option value="paper">纸张</option><option value="white">白色</option><option value="green">护眼</option><option value="dark">夜间</option></select></label></div><div id="toc-panel" hidden></div><script type="module">
+let view,changing=false,lastChange=0,bookId=null,initialCFI=null,prefs={size:18,lineHeight:1.8,theme:'paper'};
+const themes={paper:['#f6f0e5','#333b34'],white:['#ffffff','#222222'],green:['#e6eee6','#294034'],dark:['#26292b','#eeeeee']};
+function applyPrefs(){if(!view?.renderer)return;const [bg,fg]=themes[prefs.theme]||themes.paper;document.body.style.background=bg;document.body.style.color=fg;view.renderer.setStyles?.(`html,body{background:${bg}!important;color:${fg}!important;font-size:${prefs.size}px!important;line-height:${prefs.lineHeight}!important} body{padding-inline:16px!important;box-sizing:border-box!important}`)}
+function report(detail){let cfi=detail?.cfi||detail?.start?.cfi||detail?.location?.cfi||null;let percent=detail?.fraction??detail?.location?.fraction??null;parent.postMessage({type:'MOBI_PROGRESS',bookId,cfi,percent,sectionIndex:detail?.index??detail?.location?.index??null},location.origin)}
+function renderToc(){const toc=view?.book?.toc||[];const draw=items=>items.map(item=>`<button class="toc-row" data-href="${String(item.href||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">${String(item.label||'章节').replace(/</g,'&lt;')}</button>${draw(item.subitems||[])}`).join('');let panel=document.querySelector('#toc-panel');panel.innerHTML='<button id="toc-close" class="toc-row">✕ 关闭目录</button>'+draw(toc);panel.querySelector('#toc-close').onclick=()=>panel.hidden=true;panel.querySelectorAll('[data-href]').forEach(el=>el.onclick=async()=>{try{await view.goTo(el.dataset.href);panel.hidden=true}catch(e){console.warn(e)}})}
 const status=document.getElementById('status');
+const menu=document.getElementById('menu');document.getElementById('menu-toggle').onclick=()=>menu.hidden=!menu.hidden;document.getElementById('toc-toggle').onclick=()=>{document.getElementById('toc-panel').hidden=false;menu.hidden=true};document.getElementById('close-menu').onclick=()=>menu.hidden=true;for(const key of ['size','lineHeight'])document.getElementById(key).oninput=e=>{prefs[key]=Number(e.target.value);applyPrefs();parent.postMessage({type:'MOBI_PREFS',prefs},location.origin)};document.getElementById('theme').onchange=e=>{prefs.theme=e.target.value;applyPrefs();parent.postMessage({type:'MOBI_PREFS',prefs},location.origin)};
 async function switchSection(dir){
  if(!view||changing||Date.now()-lastChange<650)return;
  changing=true;
@@ -36,6 +41,7 @@ function wireTouch(doc){
 }
 window.addEventListener('message',async e=>{
  if(e.origin!==location.origin||e.data?.type!=='OPEN_MOBI')return;
+ bookId=e.data.bookId;initialCFI=e.data.cfi||null;prefs={...prefs,...(e.data.prefs||{})};document.getElementById('size').value=prefs.size;document.getElementById('lineHeight').value=prefs.lineHeight;document.getElementById('theme').value=prefs.theme;
  try{
   status.textContent='正在加载 MOBI 阅读引擎…';
   await import('https://cdn.jsdelivr.net/gh/johnfactotum/foliate-js@main/view.js');
@@ -48,8 +54,10 @@ window.addEventListener('message',async e=>{
   view.renderer.setAttribute('gap','4%');
   view.renderer.setAttribute('max-inline-size','1000px');
   view.renderer.addEventListener('load',event=>wireTouch(event.detail?.doc));
-  view.addEventListener('relocate',()=>{try{for(const x of view.renderer.getContents())wireTouch(x.doc)}catch{}});
-  await view.goTo(0);
+  view.addEventListener('relocate',ev=>{try{for(const x of view.renderer.getContents())wireTouch(x.doc)}catch{}report(ev.detail)});
+  applyPrefs();
+  try{if(initialCFI)await view.goTo(initialCFI);else await view.goTo(0)}catch{await view.goTo(0)}
+  renderToc();
   for(const x of view.renderer.getContents())wireTouch(x.doc);
   status.remove();
  }catch(err){console.error(err);status.textContent='MOBI 打开失败：'+err.message}
