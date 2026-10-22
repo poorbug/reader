@@ -18,6 +18,8 @@ function wireTouch(doc){
  if(!doc||doc.__zhijianSwipe)return;
  doc.__zhijianSwipe=true;
  doc.documentElement.style.touchAction='pan-y';
+ doc.addEventListener('touchmove',()=>parent.postMessage({type:'READER_SCROLL'},location.origin),{passive:true});
+ doc.addEventListener('wheel',()=>parent.postMessage({type:'READER_SCROLL'},location.origin),{passive:true});
  doc.body.style.touchAction='pan-y';
  let tapStartX=0,tapStartY=0,tapStartTime=0;
  doc.addEventListener('touchstart',ev=>{if(ev.touches.length!==1)return;tapStartX=ev.touches[0].clientX;tapStartY=ev.touches[0].clientY;tapStartTime=Date.now()},{passive:true});
