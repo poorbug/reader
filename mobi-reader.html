@@ -46,8 +46,8 @@ function wireTouch(doc){
 }
 window.addEventListener('message',async e=>{
  if(e.origin!==location.origin)return;
- if(e.data?.type==='MOBI_SHOW_TOC'||e.data?.type==='MOBI_TOGGLE_TOC'){const panel=document.getElementById('toc-panel');panel.hidden=e.data.type==='MOBI_TOGGLE_TOC'?!panel.hidden:false;return}
- if(e.data?.type==='MOBI_CLOSE_TOC'){document.getElementById('toc-panel').hidden=true;return}
+ if(e.data?.type==='MOBI_REQUEST_TOC'){const entries=[];const flatten=items=>{for(const item of items||[]){entries.push({label:item.label||'章节',href:item.href});flatten(item.subitems)}};flatten(view?.book?.toc||[]);window.__tocEntries=entries;parent.postMessage({type:'MOBI_TOC_ENTRIES',entries:entries.map(x=>({label:x.label}))},location.origin);return}
+ if(e.data?.type==='MOBI_GOTO_TOC'){const entry=window.__tocEntries?.[e.data.index];if(entry)try{await view.goTo(entry.href)}catch(err){console.warn(err)}return}
  if(e.data?.type==='MOBI_SET_PREFS'){prefs={...prefs,...e.data.prefs};applyPrefs();return}
  if(e.data?.type!=='OPEN_MOBI')return;
  bookId=e.data.bookId;initialCFI=e.data.cfi||null;initialSection=e.data.sectionIndex??null;prefs={...prefs,...(e.data.prefs||{})};document.getElementById('size').value=prefs.size;document.getElementById('lineHeight').value=prefs.lineHeight;document.getElementById('theme').value=prefs.theme;
@@ -66,7 +66,7 @@ window.addEventListener('message',async e=>{
   view.addEventListener('relocate',ev=>{try{for(const x of view.renderer.getContents())wireTouch(x.doc)}catch{}report(ev.detail)});
   applyPrefs();
   try{if(initialCFI)await view.goTo(initialCFI);else if(initialSection!==null)await view.goTo(initialSection);else await view.goTo(0)}catch{await view.goTo(0)}
-  renderToc();
+  // Chapter navigation is rendered by the parent unified reader panel.
   for(const x of view.renderer.getContents())wireTouch(x.doc);
   status.remove();
  }catch(err){console.error(err);status.textContent='MOBI 打开失败：'+err.message}
