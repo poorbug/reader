@@ -1,7 +1,7 @@
 'use strict';
-const APP_VERSION='1.0.25';
+const APP_VERSION='1.0.26';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const app=$('#app');let db,books=[],tab='all',view='shelf',active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
+const app=$('#app');let db,books=[],tab='all',view='shelf',active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
 const rq=r=>new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const st=(name,mode='readonly')=>db.transaction(name,mode).objectStore(name);
@@ -126,7 +126,7 @@ async function digest(buf){let a=new Uint8Array(await crypto.subtle.digest('SHA-
 async function importFiles(files){for(const f of files){try{if(!/\.(epub|pdf|mobi)$/i.test(f.name)){toast('当前支持 EPUB、PDF、MOBI');continue}toast('正在导入 '+f.name);let buf=await f.arrayBuffer(),hash=await digest(buf);if(books.some(x=>x.hash===hash)){toast('这本书已经导入');continue}let format=f.name.split('.').pop().toLowerCase(),m={title:f.name.replace(/\.(epub|pdf|mobi)$/i,''),creator:''},cover=null,instance=null;if(format==='epub'){if(typeof ePub==='undefined')throw Error('EPUB 引擎未加载');instance=ePub(buf);await instance.ready;m=await instance.loaded.metadata;try{let url=await instance.coverUrl();if(url){let b=await(await fetch(url)).blob();if(b.size<2000000)cover=await new Promise(r=>{let fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b)})}}catch{}}else if(format==='pdf'){const h=new TextDecoder().decode(buf.slice(0,5));if(h!=='%PDF-')throw Error('不是有效的 PDF 文件')}else if(format==='mobi'){let bytes=new Uint8Array(buf);if(new TextDecoder().decode(bytes.slice(60,68))!=='BOOKMOBI')throw Error('不是标准 MOBI 文件或文件已加密')}let k=id(),book={id:k,hash,title:m.title||f.name.replace(/\.epub$/i,''),author:m.creator||'',format,cover,status:'reading',percent:0,createdAt:now(),lastRead:now()};await put('files',{id:k,blob:new Blob([buf],{type:f.type||({epub:'application/epub+zip',pdf:'application/pdf',mobi:'application/x-mobipocket-ebook'}[format])}),name:f.name});await put('books',book);instance?.destroy();toast('导入成功：'+book.title)}catch(e){console.error(e);toast('导入失败：'+e.message)}}await refresh()}
 async function manage(k){let b=books.find(x=>x.id===k);let n=prompt('《'+b.title+'》\n输入 1 在读，2 已读，3 归档，4 删除','1');if(n==='4'){if(!confirm('删除电子书及关联划线与笔记？'))return;for(let x of ['books','files','progress'])await del(x,k);for(let x of await all('highlights'))if(x.bookId===k)await del('highlights',x.id);for(let x of await all('bookmarks'))if(x.bookId===k)await del('bookmarks',x.id)}else if(['1','2','3'].includes(n)){b.status=({1:'reading',2:'finished',3:'archived'})[n];await put('books',b)}await refresh()}
 const palette={paper:['#f6f0e5','#333b34'],white:['#fff','#252525'],green:['#e6eee6','#294034'],dark:['#26292b','#eee']};
-async function openReader(k,target){const b=books.find(x=>x.id===k),f=await get('files',k);if(!b||!f)return toast('电子书文件不存在');if((b.format||'epub')!=='epub')return openDocumentReader(b,f,target);if(typeof ePub==='undefined')return toast('EPUB 引擎未加载');active=b;app.innerHTML=readerShell(b.title,'<div id="viewer" style="width:100%;height:100%"></div>');setupReaderChrome(closeReader,'epub');try{epub=ePub(await f.blob.arrayBuffer());await epub.ready;toc=(await epub.loaded.navigation).toc||[];rendition=epub.renderTo('viewer',{width:'100%',height:'100%',flow:'scrolled',manager:'continuous',spread:'none',allowScriptedContent:false});applyTheme();rendition.on('relocated',async loc=>{if(!active)return;let percent=0;try{if(epub.locations.length())percent=epub.locations.percentageFromCfi(loc.start.cfi)||0}catch{}active.percent=percent;active.lastRead=now();await put('progress',{bookId:active.id,cfi:loc.start.cfi,percent,updatedAt:now()});await put('books',active)});rendition.on('rendered',(_section,contents)=>{try{contents.document.documentElement.style.touchAction='pan-y';contents.document.body.style.touchAction='pan-y';contents.document.documentElement.style.webkitTouchCallout='none';contents.document.body.style.webkitTouchCallout='none';contents.document.body.style.webkitUserSelect='none';const ctrl=window.ZhijianSelection?.install(contents.document,{onChange:result=>{if(!active||active.format==='mobi')return;if(!result){if(selectionController===ctrl){selection=null;$('.selected-action')?.remove()}return}selectionController=ctrl;let cfi=null;try{cfi=contents.cfiFromRange(result.range)}catch(e){console.warn('CFI conversion failed',e)}selection={text:result.text,cfi,kind:'epub'};toggleReaderChrome(false);selectionMenu()}});contents.document.addEventListener('contextmenu',e=>e.preventDefault(),{capture:true});contents.document.addEventListener('scroll',()=>toggleReaderChrome(false),{passive:true});contents.document.addEventListener('touchmove',()=>toggleReaderChrome(false),{passive:true});contents.document.addEventListener('click',()=>{if(!contents.window.getSelection()?.toString())toggleReaderChrome()})}catch{}});let saved=await get('progress',k);await rendition.display(target||saved?.cfi||undefined);epub.locations.generate(1024).catch(console.warn);await showHighlights()}catch(e){console.error(e);toast('打开失败：'+e.message)}}
+async function openReader(k,target){const b=books.find(x=>x.id===k),f=await get('files',k);if(!b||!f)return toast('电子书文件不存在');if((b.format||'epub')!=='epub')return openDocumentReader(b,f,target);if(typeof ePub==='undefined')return toast('EPUB 引擎未加载');active=b;app.innerHTML=readerShell(b.title,'<div id="viewer" style="width:100%;height:100%"></div>');setupReaderChrome(closeReader,'epub');try{epub=ePub(await f.blob.arrayBuffer());await epub.ready;toc=(await epub.loaded.navigation).toc||[];rendition=epub.renderTo('viewer',{width:'100%',height:'100%',flow:'scrolled',manager:'continuous',spread:'none',allowScriptedContent:false});applyTheme();rendition.on('relocated',async loc=>{if(!active)return;let percent=0;try{if(epub.locations.length())percent=epub.locations.percentageFromCfi(loc.start.cfi)||0}catch{}active.percent=percent;active.lastRead=now();await put('progress',{bookId:active.id,cfi:loc.start.cfi,percent,updatedAt:now()});await put('books',active)});rendition.on('rendered',(_section,contents)=>{try{contents.document.documentElement.style.touchAction='pan-y';contents.document.body.style.touchAction='pan-y';contents.document.documentElement.style.webkitTouchCallout='none';contents.document.body.style.webkitTouchCallout='none';contents.document.body.style.webkitUserSelect='none';const ctrl=window.ZhijianSelection?.install(contents.document,{onChange:result=>{if(!active||active.format==='mobi')return;if(!result){if(selectionController===ctrl){selection=null;$('.selected-action')?.remove()}return}selectionController=ctrl;let cfi=null;try{cfi=contents.cfiFromRange(result.range)}catch(e){console.warn('CFI conversion failed',e)}selection={text:result.text,cfi,kind:'epub'};toggleReaderChrome(false);selectionMenu()}});contents.document.addEventListener('contextmenu',e=>e.preventDefault(),{capture:true});contents.document.addEventListener('scroll',()=>toggleReaderChrome(false),{passive:true});contents.document.addEventListener('touchmove',()=>toggleReaderChrome(false),{passive:true});contents.document.addEventListener('click',()=>{if(!contents.window.getSelection()?.toString())scheduleReaderTap()})}catch{}});let saved=await get('progress',k);await rendition.display(target||saved?.cfi||undefined);epub.locations.generate(1024).catch(console.warn);await showHighlights()}catch(e){console.error(e);toast('打开失败：'+e.message)}}
 function applyTheme(){if(!rendition)return;let [bg,fg]=palette[settings.theme];$('#reader').style.background=bg;$('#reader').style.color=fg;rendition.themes.default({body:{color:fg+' !important',background:bg+' !important','line-height':settings.lineHeight+' !important','padding-left':settings.margin+'px !important','padding-right':settings.margin+'px !important'},p:{'margin-bottom':settings.paragraph+'em !important'},h1:{'font-size':'clamp(22px, '+(settings.size*1.4)+'px, 40px) !important','line-height':'1.5 !important','overflow-wrap':'anywhere'},h2:{'font-size':Math.round(settings.size*1.2)+'px !important','line-height':'1.5 !important'},h3:{'font-size':Math.round(settings.size*1.1)+'px !important','line-height':'1.5 !important'}});rendition.themes.fontSize(settings.size+'px')}
 function removePop(){$('.panel')?.remove();$('.read-tools')?.remove()}
 function showTools(){removePop();let p=document.createElement('div');p.className='read-tools';p.innerHTML='<div class="row">行距 <input type="range" min="1.3" max="2.5" step="0.1" value="'+settings.lineHeight+'" id="lineheight"></div><div class="row">字号 <input type="range" min="14" max="30" value="'+settings.size+'" id="fontsize"> <span id="size">'+settings.size+'</span></div><div class="row">'+Object.entries({paper:'纸张',white:'白色',green:'护眼',dark:'深色'}).map(([k,v])=>'<button class="btn ghost small" data-theme="'+k+'">'+v+'</button>').join('')+'</div><button class="btn ghost small" id="addmark">添加书签</button> ';$('#reader').append(p);$('#fontsize').oninput=e=>{settings.size=+e.target.value;$('#size').textContent=settings.size;applyTheme();saveSettings()};p.querySelectorAll('[data-theme]').forEach(x=>x.onclick=()=>{settings.theme=x.dataset.theme;applyTheme();saveSettings()});$('#lineheight').oninput=e=>{settings.lineHeight=+e.target.value;applyTheme();saveSettings()};$('#addmark').onclick=async()=>{let cfi=rendition.currentLocation()?.start?.cfi;if(cfi){await put('bookmarks',{id:id(),bookId:active.id,cfi,createdAt:now()});toast('书签已保存')}}}
@@ -135,16 +135,43 @@ function postMobiNoteChange(type,note){
  if(active?.format!=='mobi')return;
  $('#document-body iframe')?.contentWindow?.postMessage({type,note:note?{id:note.id,cfi:note.cfi||null,text:note.text||'',note:note.note||''}:null},location.origin);
 }
-function closeInlineNoteActions(){$('#inline-note-actions')?.remove()}
+function markAnnotationTap(){
+ annotationTapUntil=Date.now()+650;
+ if(readerTapTimer){clearTimeout(readerTapTimer);readerTapTimer=null}
+ $('#reader')?.classList.remove('chrome-visible');
+ closeReaderPanels();
+}
+function scheduleReaderTap(){
+ if(readerTapTimer){clearTimeout(readerTapTimer);readerTapTimer=null}
+ if($('#inline-note-actions')){closeInlineNoteActions();return}
+ if(Date.now()<annotationTapUntil)return;
+ readerTapTimer=setTimeout(()=>{
+  readerTapTimer=null;
+  if(Date.now()<annotationTapUntil||$('#inline-note-actions'))return;
+  toggleReaderChrome();
+ },220);
+}
+function closeInlineNoteActions(){
+ $('#inline-note-actions')?.remove();
+ $('#inline-note-backdrop')?.remove();
+}
 async function openInlineNoteActions(noteId){
  if(!active||!noteId)return;
+ // Guard must happen synchronously, BEFORE IndexedDB is consulted.
+ // Otherwise the same tap briefly opens the reading toolbar.
+ markAnnotationTap();
+ closeInlineNoteActions();clearSelection();
  const bookId=active.id;
  let note;try{note=await get('highlights',noteId)}catch(e){console.error(e);return}
  if(!note||note.bookId!==bookId||active?.id!==bookId)return;
- closeInlineNoteActions();clearSelection();closeReaderPanels();toggleReaderChrome(false);
+ const backdrop=document.createElement('div');
+ backdrop.id='inline-note-backdrop';backdrop.className='inline-note-backdrop';
+ backdrop.setAttribute('aria-label','关闭笔记');
+ backdrop.addEventListener('click',e=>{e.stopPropagation();markAnnotationTap();closeInlineNoteActions()});
+ backdrop.addEventListener('touchend',e=>e.stopPropagation(),{passive:true});
  const card=document.createElement('div');card.id='inline-note-actions';card.className='inline-note-actions';card.setAttribute('role','dialog');card.setAttribute('aria-label','笔记操作');
- card.innerHTML='<div class="inline-note-header"><strong>这段文字的笔记</strong><button type="button" class="inline-note-dismiss" aria-label="关闭">×</button></div><blockquote class="inline-note-excerpt">'+esc(note.text||'')+'</blockquote><div class="inline-note-content">'+esc(note.note||'（暂无笔记内容）')+'</div><div class="inline-note-buttons"><button type="button" data-action="edit">编辑笔记</button><button type="button" data-action="delete">删除笔记</button></div>';
- $('#reader')?.append(card);
+ card.innerHTML='<div class="inline-note-header"><strong>'+(note.note?.trim()?'这段文字的笔记':'这段文字的划线')+'</strong><button type="button" class="inline-note-dismiss" aria-label="关闭">×</button></div><blockquote class="inline-note-excerpt">'+esc(note.text||'')+'</blockquote><div class="inline-note-content">'+esc(note.note||'（暂无笔记，点击编辑可以添加）')+'</div><div class="inline-note-buttons"><button type="button" data-action="edit">'+(note.note?.trim()?'编辑笔记':'添加笔记')+'</button><button type="button" data-action="delete">'+(note.note?.trim()?'删除笔记':'删除划线')+'</button></div>';
+ $('#reader')?.append(backdrop,card);
  card.querySelector('.inline-note-dismiss').onclick=closeInlineNoteActions;
  card.querySelector('[data-action="edit"]').onclick=async()=>{
   const value=prompt('编辑笔记：',note.note||'');if(value===null)return;
@@ -168,7 +195,7 @@ async function syncNoteMark(note){
 async function removeNoteMark(note){
  if(!active||active.id!==note.bookId)return;
  if((active.format||'epub')==='epub'&&rendition&&note.cfi){
-  try{rendition.annotations.remove(note.cfi,note.note?.trim()?'underline':'highlight')}catch(e){console.warn(e)}
+  try{rendition.annotations.remove(note.cfi,'underline');rendition.annotations.remove(note.cfi,'highlight')}catch(e){console.warn(e)}
  }else if(active.format==='mobi')postMobiNoteChange('MOBI_NOTE_REMOVE',note);
 }
 async function showBookNotes(){
@@ -245,7 +272,7 @@ async function saveHighlight(withNote){
  if(data.kind==='mobi'){
   const highlight={id:id(),bookId,text:data.text,note,cfi:data.cfi||null,source:'mobi-selection',createdAt:now()};
   await put('highlights',highlight);
-  if(note.trim())postMobiNoteChange('MOBI_NOTE_UPSERT',highlight);
+  postMobiNoteChange('MOBI_NOTE_UPSERT',highlight);
   toast('已保存'+(withNote?'笔记':'摘录')+(highlight.cfi?'':'（暂未获取原文位置）'));
  }else{
   if(!data.cfi){toast('选区定位失败，请重新选择');return}
@@ -261,11 +288,14 @@ function updateEpubNoteMark(h,oldNote){
  try{
   rendition.annotations.remove(h.cfi,'underline');
   rendition.annotations.remove(h.cfi,'highlight');
-  if(typeof h.note==='string'&&h.note.trim()){
-   rendition.annotations.underline(h.cfi,{noteId:h.id},event=>{event?.stopPropagation?.();openInlineNoteActions(h.id)},'zhijian-note-underline',{'stroke':'#5a9d8b','stroke-width':'2.5','stroke-opacity':'0.95'});
-  }else{
-   rendition.annotations.highlight(h.cfi,{noteId:h.id},()=>{},'my-highlight',{fill:'#eac45a','fill-opacity':'0.35'});
-  }
+  // Both plain highlights and notes are displayed as clickable underlines.
+  rendition.annotations.underline(h.cfi,{noteId:h.id},event=>{
+   event?.preventDefault?.();event?.stopImmediatePropagation?.();event?.stopPropagation?.();
+   openInlineNoteActions(h.id);
+  },'zhijian-note-underline',{
+   'stroke':h.note?.trim()?'#5a9d8b':'#83a69d',
+   'stroke-width':'2.5','stroke-opacity':'0.95'
+  });
  }catch(e){console.warn('Could not render note annotation',e)}
 }
 async function showHighlights(){
@@ -298,7 +328,7 @@ function syncPageTheme(theme){
 }
 function updateReaderAppearance(){const r=$('#reader');if(!r)return;const [bg,fg]=palette[settings.theme]||palette.paper;r.style.background=bg;r.style.color=fg;r.style.setProperty('--reader-bg',bg);r.style.setProperty('--reader-fg',fg);r.dataset.theme=settings.theme;syncPageTheme(settings.theme);const d=$('#reading-dimmer');if(d)d.style.opacity=String((100-(settings.brightness||100))/100);if(active?.format==='epub')applyTheme()}
 function setupReaderChrome(onBack,format){$('#reader-back').onclick=onBack;$('#reader-toc').onclick=showToc;$('#reader-notes').onclick=showBookNotes;$('#reader-colors').onclick=()=>readerSettings('colors');$('#reader-fonts').onclick=()=>readerSettings('fonts');updateReaderAppearance();const surface=$('#reader .reader-full');let y=0,x=0;surface?.addEventListener('touchstart',e=>{if(e.touches.length===1){y=e.touches[0].clientY;x=e.touches[0].clientX}},{passive:true});surface?.addEventListener('touchmove',e=>{if(e.touches.length===1&&(Math.abs(e.touches[0].clientY-y)>12||Math.abs(e.touches[0].clientX-x)>12))toggleReaderChrome(false)},{passive:true});surface?.addEventListener('wheel',()=>toggleReaderChrome(false),{passive:true})}
-window.addEventListener('message',e=>{if(e.origin===location.origin&&e.data?.type==='READER_TAP'&&!$('#inline-note-actions'))toggleReaderChrome();if(e.origin===location.origin&&e.data?.type==='READER_SCROLL')toggleReaderChrome(false)});
+window.addEventListener('message',e=>{if(e.origin===location.origin&&e.data?.type==='READER_TAP')scheduleReaderTap();if(e.origin===location.origin&&e.data?.type==='READER_SCROLL')toggleReaderChrome(false)});
 window.addEventListener('message',e=>{if(e.origin!==location.origin||e.data?.type!=='MOBI_TOC_ENTRIES'||!active||active.format!=='mobi')return;const p=$('#reading-settings');if(p?.hidden||p.dataset.kind!=='toc')return;const entries=$('#toc-entries');if(!entries)return;const arr=Array.isArray(e.data.entries)?e.data.entries:[];entries.innerHTML=arr.length?arr.map((x,i)=>'<button class="toc-item" data-index="'+i+'">'+esc(x.label)+'</button>').join(''):'此书没有目录';entries.querySelectorAll('[data-index]').forEach(x=>x.onclick=()=>{$('#document-body iframe')?.contentWindow?.postMessage({type:'MOBI_GOTO_TOC',index:Number(x.dataset.index)},location.origin);closeReaderPanels()})});
 window.addEventListener('message',async e=>{if(e.origin!==location.origin||!active||active.format!=='mobi')return;const d=e.data;if(d?.type==='CUSTOM_COPY_TEXT'){try{await navigator.clipboard.writeText(d.text)}catch{}return}if(d?.type!=='MOBI_CUSTOM_SELECTION'||!d.text)return;let note='';if(d.action==='note'){const v=prompt('记录这段文字的想法：','');if(v===null)return;note=v}if(d.action==='highlight'||d.action==='note'){await put('highlights',{id:id(),bookId:active.id,text:d.text,note,cfi:null,createdAt:now(),source:'mobi-selection'});toast('已保存'+(note?'笔记':'摘录')+'（暂不支持跳转定位）')}});
 window.addEventListener('message',e=>{
@@ -336,7 +366,7 @@ async function openDocumentReader(b,f,target){
     let frame=document.createElement('iframe');frame.src=documentUrl+'#toolbar=1';frame.title=b.title;frame.style.cssText='width:100%;height:100%;border:0;background:#fff';$('#document-body').append(frame);
   }else{
     let frame=document.createElement('iframe');frame.src='./mobi-reader.html';frame.title=b.title;frame.style.cssText='width:100%;height:100%;border:0;background:#fff';$('#document-body').append(frame);
-    frame.onload=async()=>{if(!active||active.id!==b.id)return;let data=await f.blob.arrayBuffer();frame.contentWindow.postMessage({type:'OPEN_MOBI',bookId:b.id,cfi:target||(await get('progress',b.id))?.cfi||null,sectionIndex:(await get('progress',b.id))?.sectionIndex??null,prefs:settings,notes:(await all('highlights')).filter(h=>h.bookId===b.id&&h.note?.trim()).map(h=>({id:h.id,cfi:h.cfi||null,text:h.text,note:h.note})),buffer:data,name:f.name||b.title+'.mobi'},location.origin,[data])};
+    frame.onload=async()=>{if(!active||active.id!==b.id)return;let data=await f.blob.arrayBuffer();frame.contentWindow.postMessage({type:'OPEN_MOBI',bookId:b.id,cfi:target||(await get('progress',b.id))?.cfi||null,sectionIndex:(await get('progress',b.id))?.sectionIndex??null,prefs:settings,notes:(await all('highlights')).filter(h=>h.bookId===b.id).map(h=>({id:h.id,cfi:h.cfi||null,text:h.text,note:h.note||''})),buffer:data,name:f.name||b.title+'.mobi'},location.origin,[data])};
   }
   b.lastRead=now();await put('books',b);
 }
