@@ -123,3 +123,21 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
  color:inherit;font-size:15px
 }
 .immersive-reader .inline-note-buttons [data-action="delete"]{color:#be5959;border-color:#be595957}
+
+/* v1.0.25 — larger back affordance; quoted book text secondary to personal notes. */
+.immersive-reader #reader-back{
+ display:flex;align-items:center;justify-content:center;
+ flex:0 0 49px;width:49px;min-height:49px;padding:6px;
+ color:var(--reader-fg,#333b34);
+}
+.immersive-reader #reader-back svg{display:block;width:32px;height:32px}
+.immersive-reader .book-note-quote{
+ font-size:13px;line-height:1.65;font-weight:400;
+ opacity:.75;
+}
+.immersive-reader .book-note-comment{
+ font-size:17px;line-height:1.75;font-weight:500;
+ opacity:1;letter-spacing:.01em;
+}
+.app .note{font-size:13px;line-height:1.65;opacity:.75}
+.app .note-text{font-size:17px;line-height:1.75;font-weight:500;color:#333b34}
