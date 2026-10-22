@@ -38,3 +38,12 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .reader-toolbar button.selected{color:#9ad2bf;background:rgba(151,202,186,.15);border-radius:10px}
 .reading-settings .theme-option.selected{background:#487b6e;border-color:#a5e6ce;color:white;box-shadow:0 0 0 2px #a5e6ce55 inset}
 @media(prefers-reduced-motion:reduce){.immersive-reader .reading-chrome{transition:none}}
+
+/* v1.0.13: theme-aware reading chrome and chapter navigation */
+.immersive-reader .reading-chrome,.immersive-reader .reading-settings,.immersive-reader .panel{background:var(--reader-bg,#f6f0e5);color:var(--reader-fg,#333b34)}
+.immersive-reader .reader-top .title,.immersive-reader .reader-toolbar button{color:var(--reader-fg,#333b34)}
+.immersive-reader .panel .toc-item{background:transparent;color:inherit;border-bottom:1px solid currentColor}
+.immersive-reader .panel .toc-item:hover{background:color-mix(in srgb,var(--reader-fg) 8%,transparent)}
+.immersive-reader .reading-settings .theme-option{background:transparent;color:inherit;border-color:currentColor}
+.immersive-reader .reading-settings .theme-option.selected{background:color-mix(in srgb,var(--reader-fg) 14%,transparent);border:2px solid currentColor;box-shadow:none;font-weight:700}
+.immersive-reader .reader-toolbar button.selected{background:color-mix(in srgb,var(--reader-fg) 12%,transparent);color:inherit}
