@@ -84,7 +84,7 @@ async function openDocumentReader(b,f){
     let frame=document.createElement('iframe');frame.src=documentUrl+'#toolbar=1';frame.title=b.title;frame.style.cssText='width:100%;height:100%;border:0;background:#fff';$('#document-body').append(frame);
   }else{
     let frame=document.createElement('iframe');frame.src='./mobi-reader.html';frame.title=b.title;frame.style.cssText='width:100%;height:100%;border:0;background:#fff';$('#document-body').append(frame);
-    frame.onload=async()=>{if(!active||active.id!==b.id)return;let data=await f.blob.arrayBuffer();frame.contentWindow.postMessage({type:'OPEN_MOBI',bookId:b.id,cfi:(await get('progress',b.id))?.cfi||null,prefs:settings,buffer:data,name:f.name||b.title+'.mobi'},location.origin,[data])};
+    frame.onload=async()=>{if(!active||active.id!==b.id)return;let data=await f.blob.arrayBuffer();frame.contentWindow.postMessage({type:'OPEN_MOBI',bookId:b.id,cfi:(await get('progress',b.id))?.cfi||null,sectionIndex:(await get('progress',b.id))?.sectionIndex??null,prefs:settings,buffer:data,name:f.name||b.title+'.mobi'},location.origin,[data])};
   }
   b.lastRead=now();await put('books',b);
 }
