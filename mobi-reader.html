@@ -102,7 +102,8 @@ function updateMobiNote(note){
  if(!note?.id)return;
  const prior=noteMap.get(note.id);
  if(prior?.cfi&&prior.cfi!==note.cfi)removeMobiNote(prior);
- if(note.note?.trim())noteMap.set(note.id,note);else{noteMap.delete(note.id);removeMobiNote(note)}
+ if(note.note?.trim())noteMap.set(note.id,note);else{noteMap.delete(note.id);removeMobiNote(prior||note)}
+ if(note.note?.trim()&&!note.cfi&&view?.renderer){try{for(const item of view.renderer.getContents())locateLegacyMobiNotes(item.doc,item.index)}catch{}}
  scheduleNoteDrawing();
 }
 function legacyQuoteRange(doc,quote){
@@ -166,7 +167,7 @@ function wireTouch(doc){
 window.addEventListener('message',async e=>{
  if(e.origin!==location.origin)return;
  if(e.data?.type==='MOBI_NOTE_UPSERT'){updateMobiNote(e.data.note);return}
- if(e.data?.type==='MOBI_NOTE_REMOVE'){const note=e.data.note;if(note){removeMobiNote(note);noteMap.delete(note.id)}return}
+ if(e.data?.type==='MOBI_NOTE_REMOVE'){const note=e.data.note;if(note){removeMobiNote(noteMap.get(note.id)||note);noteMap.delete(note.id)}return}
  if(e.data?.type==='MOBI_GOTO_CFI'){if(e.data.cfi&&view)try{await view.goTo(e.data.cfi)}catch(err){console.warn(err)}return}
  if(e.data?.type==='ZHJ_CLEAR_SELECTION'){try{for(const x of view?.renderer?.getContents()||[])x.doc?.__zhjSelectionApi?.clear()}catch{}return}
  if(e.data?.type==='MOBI_REQUEST_TOC'){const entries=[];const flatten=items=>{for(const item of items||[]){entries.push({label:item.label||'章节',href:item.href});flatten(item.subitems)}};flatten(view?.book?.toc||[]);window.__tocEntries=entries;parent.postMessage({type:'MOBI_TOC_ENTRIES',entries:entries.map(x=>({label:x.label}))},location.origin);return}
