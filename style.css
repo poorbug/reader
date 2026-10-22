@@ -8,3 +8,24 @@
 /* Reading-app touch policy: allow one-finger scrolling, disable browser zoom gestures. */
 html,body,#app,.reader,.reader-body,.reader-top{touch-action:pan-x pan-y}
 button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
+
+/* Immersive reading layout */
+.immersive-reader{overflow:hidden}
+.immersive-reader .reader-full{position:absolute;inset:0;flex:none;height:100%;width:100%;min-height:0}
+.immersive-reader .reading-chrome{position:absolute;left:0;right:0;z-index:25;background:rgba(25,27,28,.95);color:#f5f5f5;visibility:hidden;opacity:0;pointer-events:none;transition:opacity .15s ease}
+.immersive-reader.chrome-visible .reading-chrome{visibility:visible;opacity:1;pointer-events:auto}
+.immersive-reader .reader-top{top:0;height:calc(54px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top);justify-content:space-between}
+.immersive-reader .reader-top .title{font-size:15px;max-width:70%;color:white;text-align:center}
+.immersive-reader .reader-toolbar{bottom:0;height:calc(68px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);display:flex;justify-content:space-around;align-items:center}
+.reader-toolbar button{background:none;color:#e5e5e5;border:0;padding:8px 12px;display:flex;align-items:center;flex-direction:column;gap:4px;font-size:25px}
+.reader-toolbar button small{font-size:11px;font-weight:400}
+.reader-toolbar button:disabled{opacity:.35}
+.immersive-reader .reading-settings{position:absolute;bottom:calc(68px + env(safe-area-inset-bottom));left:0;right:0;z-index:28;background:#222526;color:#fff;padding:18px 24px 20px;border-radius:14px 14px 0 0;box-shadow:0 -5px 25px #0004}
+.immersive-reader .reading-settings[hidden]{display:none}
+.reading-settings label{display:block;font-size:13px;margin:14px 0}
+.reading-settings input{display:block;width:100%;margin-top:10px;accent-color:#85baa7}
+.reading-settings .theme-options{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+.reading-settings .theme-option{background:#434849;border:1px solid #666;color:white;border-radius:9px;padding:10px 15px}
+.reading-settings .setting-title{font-size:16px;font-weight:600}
+.reading-dimmer{position:absolute;inset:0;background:black;opacity:0;pointer-events:none;z-index:14}
+.immersive-reader .panel{z-index:29;bottom:calc(68px + env(safe-area-inset-bottom));top:calc(54px + env(safe-area-inset-top))}
