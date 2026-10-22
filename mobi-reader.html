@@ -4,7 +4,34 @@ html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#f6f0e5;col
 </style></head><body><div id="status">正在等待 MOBI 文件…</div><div id="holder"></div><button id="menu-toggle" hidden aria-label="阅读设置">Aa</button><div id="menu" hidden><button id="toc-toggle">目录</button><button id="close-menu">关闭</button><label>字号 <input id="size" type="range" min="14" max="32" value="18"></label><label>行距 <input id="lineHeight" type="range" min="1.3" max="2.5" step="0.1" value="1.8"></label><label>背景 <select id="theme"><option value="paper">纸张</option><option value="white">白色</option><option value="green">护眼</option><option value="dark">夜间</option></select></label></div><div id="toc-panel" hidden></div><script type="module">
 let view,changing=false,lastChange=0,bookId=null,initialSection=null,initialCFI=null,prefs={size:18,lineHeight:1.8,theme:'paper'};
 const themes={paper:['#f6f0e5','#333b34'],white:['#ffffff','#222222'],green:['#e6eee6','#294034'],dark:['#26292b','#eeeeee']};
-function applyPrefs(){if(!view?.renderer)return;const [bg,fg]=themes[prefs.theme]||themes.paper;document.body.style.background=bg;document.body.style.color=fg;document.documentElement.style.setProperty('--mobi-bg',bg);document.documentElement.style.setProperty('--mobi-fg',fg);view.renderer.setStyles?.(`html,body{background:${bg}!important;color:${fg}!important;font-size:${prefs.size}px!important;line-height:${prefs.lineHeight}!important} body{padding-inline:${prefs.margin||18}px!important;box-sizing:border-box!important} p{margin-bottom:${prefs.paragraph??0.8}em!important} h1,h1 *, .chapter-title,.chapter-title *{font-size:${Math.min(40,Math.max(20,Math.round(prefs.size*1.4)))}px!important;line-height:1.5!important;overflow-wrap:anywhere!important}h2,h2 *{font-size:${Math.round(prefs.size*1.2)}px!important;line-height:1.5!important}h3,h3 *{font-size:${Math.round(prefs.size*1.1)}px!important;line-height:1.5!important}`)}
+function applyPrefs(){if(!view?.renderer)return;const [bg,fg]=themes[prefs.theme]||themes.paper;document.body.style.background=bg;document.body.style.color=fg;document.documentElement.style.setProperty('--mobi-bg',bg);document.documentElement.style.setProperty('--mobi-fg',fg);view.renderer.setStyles?.(`html,body{background:${bg}!important;color:${fg}!important;font-size:${prefs.size}px!important;line-height:${prefs.lineHeight}!important} body{padding-inline:${prefs.margin||18}px!important;box-sizing:border-box!important} p{margin-bottom:${prefs.paragraph??0.8}em!important} h1,h1 *, .chapter-title,.chapter-title *{font-size:${Math.min(40,Math.max(20,Math.round(prefs.size*1.4)))}px!important;line-height:1.5!important;overflow-wrap:anywhere!important}h2,h2 *{font-size:${Math.round(prefs.size*1.2)}px!important;line-height:1.5!important}h3,h3 *{font-size:${Math.round(prefs.size*1.1)}px!important;line-height:1.5!important}`);normalizeBookHeadings()}
+function normalizeBookHeadings(){
+ if(!view?.renderer)return;
+ let docs=[];try{docs=view.renderer.getContents().map(x=>x.doc).filter(Boolean)}catch{}
+ for(const doc of docs){
+  const main=doc.body;if(!main)continue;
+  const candidates=[...main.querySelectorAll('h1,h2,h3,font,[style*="font-size"],[size],p,div')].slice(0,150);
+  let hits=0;
+  for(const el of candidates){
+   if(hits>=12)break;
+   const text=(el.textContent||'').trim();
+   if(!text||text.length>90||el.querySelector('img,svg,table'))continue;
+   if(['DIV','P'].includes(el.tagName)&&el.children.length>2)continue;
+   const computed=doc.defaultView?.getComputedStyle(el);
+   const px=parseFloat(computed?.fontSize)||0;
+   const isHeading=/^H[1-3]$/.test(el.tagName)||/chapter|title|heading|bt|biaoti/i.test(String(el.className||''));
+   const isOversized=px>Math.max(32,prefs.size*1.65);
+   if(!isHeading&&!isOversized)continue;
+   const ratio=el.tagName==='H2'?1.2:el.tagName==='H3'?1.1:1.4;
+   const wanted=Math.min(40,Math.max(18,Math.round(prefs.size*ratio)));
+   el.style.setProperty('font-size',wanted+'px','important');
+   el.style.setProperty('line-height','1.5','important');
+   el.style.setProperty('overflow-wrap','anywhere','important');
+   for(const child of el.querySelectorAll('font,span,b,strong,i,em'))child.style.setProperty('font-size','inherit','important');
+   hits++;
+  }
+ }
+}
 function report(detail){let cfi=detail?.cfi||detail?.start?.cfi||detail?.location?.cfi||null;let percent=detail?.fraction??detail?.location?.fraction??null;parent.postMessage({type:'MOBI_PROGRESS',bookId,cfi,percent,sectionIndex:detail?.index??detail?.location?.index??null},location.origin)}
 function renderToc(){const toc=view?.book?.toc||[];const draw=items=>items.map(item=>`<button class="toc-row" data-href="${String(item.href||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">${String(item.label||'章节').replace(/</g,'&lt;')}</button>${draw(item.subitems||[])}`).join('');let panel=document.querySelector('#toc-panel');panel.innerHTML=draw(toc);panel.querySelectorAll('[data-href]').forEach(el=>el.onclick=async()=>{try{await view.goTo(el.dataset.href);panel.hidden=true}catch(e){console.warn(e)}})}
 const status=document.getElementById('status');
@@ -62,12 +89,12 @@ window.addEventListener('message',async e=>{
   view.renderer.setAttribute('margin','0px');
   view.renderer.setAttribute('gap','4%');
   view.renderer.setAttribute('max-inline-size','1000px');
-  view.renderer.addEventListener('load',event=>wireTouch(event.detail?.doc));
+  view.renderer.addEventListener('load',event=>{wireTouch(event.detail?.doc);requestAnimationFrame(normalizeBookHeadings)});
   view.addEventListener('relocate',ev=>{try{for(const x of view.renderer.getContents())wireTouch(x.doc)}catch{}report(ev.detail)});
   applyPrefs();
   try{if(initialCFI)await view.goTo(initialCFI);else if(initialSection!==null)await view.goTo(initialSection);else await view.goTo(0)}catch{await view.goTo(0)}
   // Chapter navigation is rendered by the parent unified reader panel.
-  for(const x of view.renderer.getContents())wireTouch(x.doc);
+  for(const x of view.renderer.getContents())wireTouch(x.doc);normalizeBookHeadings();
   status.remove();
  }catch(err){console.error(err);status.textContent='MOBI 打开失败：'+err.message}
 });
