@@ -96,3 +96,30 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .immersive-reader .book-note-action{border:0;border-radius:7px;padding:8px 9px;background:color-mix(in srgb,var(--reader-fg,#333b34) 11%,transparent);color:inherit;font-size:12px}
 .immersive-reader .book-note-unlocated{font-size:11px;opacity:.65}
 .immersive-reader .book-note-empty{text-align:center;line-height:2;padding:32px 10px;opacity:.72}
+
+/* v1.0.24 — underlined annotations open a compact, theme-aware note action sheet. */
+.immersive-reader .inline-note-actions{
+ position:absolute;z-index:110;bottom:calc(18px + env(safe-area-inset-bottom));
+ left:14px;right:14px;margin:0 auto;max-width:480px;
+ padding:17px 18px 16px;border-radius:17px;
+ background:var(--reader-bg,#f6f0e5);color:var(--reader-fg,#333b34);
+ border:1px solid color-mix(in srgb,var(--reader-fg,#333b34) 22%,transparent);
+ box-shadow:0 10px 36px #0005;
+}
+.immersive-reader .inline-note-header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:15px}
+.immersive-reader .inline-note-dismiss{font-size:25px;line-height:1;border:0;background:transparent;color:inherit;padding:4px 7px}
+.immersive-reader .inline-note-excerpt{
+ margin:12px 0 9px;max-height:100px;overflow:auto;overflow-wrap:anywhere;
+ border-left:3px solid #5a9d8b;padding-left:10px;font-size:14px;line-height:1.65
+}
+.immersive-reader .inline-note-content{
+ max-height:145px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
+ font-size:14px;line-height:1.7;opacity:.9
+}
+.immersive-reader .inline-note-buttons{display:flex;gap:12px;margin-top:18px}
+.immersive-reader .inline-note-buttons button{
+ flex:1;min-width:0;border:1px solid color-mix(in srgb,var(--reader-fg) 22%,transparent);
+ border-radius:11px;padding:12px 8px;background:color-mix(in srgb,var(--reader-fg) 9%,transparent);
+ color:inherit;font-size:15px
+}
+.immersive-reader .inline-note-buttons [data-action="delete"]{color:#be5959;border-color:#be595957}
