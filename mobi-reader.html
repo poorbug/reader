@@ -46,7 +46,8 @@ function wireTouch(doc){
 }
 window.addEventListener('message',async e=>{
  if(e.origin!==location.origin)return;
- if(e.data?.type==='MOBI_SHOW_TOC'){document.getElementById('toc-panel').hidden=false;return}
+ if(e.data?.type==='MOBI_SHOW_TOC'||e.data?.type==='MOBI_TOGGLE_TOC'){const panel=document.getElementById('toc-panel');panel.hidden=e.data.type==='MOBI_TOGGLE_TOC'?!panel.hidden:false;return}
+ if(e.data?.type==='MOBI_CLOSE_TOC'){document.getElementById('toc-panel').hidden=true;return}
  if(e.data?.type==='MOBI_SET_PREFS'){prefs={...prefs,...e.data.prefs};applyPrefs();return}
  if(e.data?.type!=='OPEN_MOBI')return;
  bookId=e.data.bookId;initialCFI=e.data.cfi||null;initialSection=e.data.sectionIndex??null;prefs={...prefs,...(e.data.prefs||{})};document.getElementById('size').value=prefs.size;document.getElementById('lineHeight').value=prefs.lineHeight;document.getElementById('theme').value=prefs.theme;
