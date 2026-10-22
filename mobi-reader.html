@@ -44,8 +44,10 @@ window.addEventListener('message',async e=>{
   await view.open(new File([e.data.buffer],e.data.name,{type:'application/x-mobipocket-ebook'}));
   if(!view.renderer)throw Error('阅读引擎未初始化');
   view.renderer.setAttribute('flow','scrolled');
-  view.renderer.setAttribute('margin','0');
-  view.renderer.setAttribute('max-inline-size','9999');
+  view.style.setProperty('--_margin-left','18px');
+  view.style.setProperty('--_margin-right','18px');
+  view.renderer.setAttribute('margin','0px');
+  view.renderer.setAttribute('max-inline-size','1000px');
   view.renderer.addEventListener('load',event=>wireTouch(event.detail?.doc));
   view.addEventListener('relocate',()=>{try{for(const x of view.renderer.getContents())wireTouch(x.doc)}catch{}});
   await view.goTo(0);
