@@ -1,12 +1,23 @@
-const NAME='zhijian-reader-v27';
-const VERSION='1.0.27';
+const NAME='zhijian-reader-v28';
+const VERSION='1.0.28';
 const CORE=['./','./index.html','./style.css','./app.js','./icon.svg','./manifest.webmanifest','./mobi-reader.html','./selection.js','./version.json'];
+// Essential foliate modules are deployed on this same origin, so MOBI can open offline.
+const MOBI_MODULES=[
+ './vendor/foliate-js/view.js',
+ './vendor/foliate-js/epubcfi.js',
+ './vendor/foliate-js/progress.js',
+ './vendor/foliate-js/overlayer.js',
+ './vendor/foliate-js/text-walker.js',
+ './vendor/foliate-js/mobi.js',
+ './vendor/foliate-js/paginator.js',
+ './vendor/foliate-js/vendor/fflate.js'
+];
 const EXTERNAL=['https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js','https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js'];
 self.addEventListener('install',event=>{
  event.waitUntil((async()=>{
   const cache=await caches.open(NAME);
   // Force a fresh copy of the deployed assets instead of an old HTTP-cache response.
-  await cache.addAll(CORE.map(path=>new Request(new URL(path,self.registration.scope),{cache:'reload'})));
+  await cache.addAll([...CORE,...MOBI_MODULES].map(path=>new Request(new URL(path,self.registration.scope),{cache:'reload'})));
   await Promise.allSettled(EXTERNAL.map(url=>cache.add(url)));
   await self.skipWaiting();
  })());
