@@ -17,10 +17,30 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout reader
         uses: actions/checkout@v4
-      - name: Check JavaScript
-        run: node --check app.js
+      # foliate-js is an ES-module library. Ship a pinned copy with the site,
+      # rather than importing @main from jsDelivr at runtime.
+      - name: Checkout pinned foliate-js
+        uses: actions/checkout@v4
+        with:
+          repository: johnfactotum/foliate-js
+          ref: 78914aef4466eb960965702401634c2cb348e9b1
+          path: vendor/foliate-js
+          persist-credentials: false
+      - name: Verify offline MOBI dependencies
+        run: |
+          node --check app.js
+          node --check sw.js
+          node --check selection.js
+          node --check vendor/foliate-js/view.js
+          node --check vendor/foliate-js/mobi.js
+          node --check vendor/foliate-js/paginator.js
+          for file in view.js mobi.js paginator.js epubcfi.js progress.js overlayer.js text-walker.js vendor/fflate.js; do
+            test -s "vendor/foliate-js/$file" || (echo "Missing foliate dependency: $file" && exit 1)
+          done
+      - name: Remove Git checkout metadata
+        run: rm -rf vendor/foliate-js/.git
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site
