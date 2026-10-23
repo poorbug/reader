@@ -230,3 +230,9 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .app:has(.tabs) .tabs{gap:7px;margin:13px 0 16px;padding:0 0 2px}
 .app:has(.tabs) .tab{font-size:12px;line-height:1.2;padding:7px 13px;min-height:32px}
 @media(max-width:380px){.app:has(.tabs) .top h1{font-size:23px}.app:has(.tabs) .shelf-subtitle{font-size:10px}}
+
+/* v1.0.41 — shared header typography for bookshelf, notes, settings */
+.app .top{align-items:center;gap:12px}
+.app .top .eyebrow{font-size:9px;letter-spacing:2px}
+.app .top h1{font-size:25px;line-height:1.15;margin:3px 0 3px}
+@media(max-width:380px){.app .top h1{font-size:23px}}
