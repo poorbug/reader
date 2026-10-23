@@ -210,3 +210,11 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
  display:flex;flex-direction:row;align-items:center;
 }
 @media(max-width:360px){.app .install-strip{flex-direction:row;align-items:center}}
+
+/* v1.0.39 — cover long-press actions */
+.book .cover{touch-action:pan-y;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;cursor:pointer}
+#book-action-dismiss{position:fixed;inset:0;z-index:200;background:transparent}
+#book-action-menu{position:fixed;z-index:201;display:flex;align-items:center;justify-content:space-around;gap:3px;width:280px;max-width:calc(100vw - 16px);padding:7px;border-radius:13px;background:#263b34;color:#fff;box-shadow:0 7px 25px #0004}
+#book-action-menu button{flex:1;border:0;border-radius:7px;background:transparent;color:#fff;padding:9px 4px;font-size:14px;white-space:nowrap}
+#book-action-menu button:active,#book-action-menu button[aria-current="true"]{background:#ffffff25}
+#book-action-menu button[data-book-action="delete"]{color:#ffbcb2}
