@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.48';
+const APP_VERSION='1.0.49';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='reading',view='shelf',notesGroupBookId=null,active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
@@ -240,6 +240,31 @@ rendition.on('rendered',(_section,view)=>{
    epubTapToggle();
   },{capture:true});
  }catch(error){epubTrace('实际 iframe 绑定失败: '+error.message);console.warn(error)}
+});
+// EPUB iframe documents can be replaced after 'rendered'. Rebind to the live document.
+rendition.on('rendered',(_section,view)=>{
+ const iframe=view?.iframe||view?.element?.querySelector?.('iframe');
+ if(!iframe)return;
+ const bindLive=()=>{
+  try{
+   const doc=iframe.contentDocument;
+   if(!doc||doc.__zhjLiveTap)return;
+   doc.__zhjLiveTap=true;
+   epubTrace('实时 iframe 文档绑定 '+doc.readyState);
+   let start=null,lastTouch=0;
+   doc.addEventListener('touchstart',e=>{epubTrace('实时 touchstart');const t=e.touches?.[0];start=t?{x:t.clientX,y:t.clientY,at:Date.now(),moved:false}:null},{capture:true,passive:true});
+   doc.addEventListener('touchmove',e=>{const t=e.touches?.[0];if(start&&t&&Math.hypot(t.clientX-start.x,t.clientY-start.y)>12)start.moved=true},{capture:true,passive:true});
+   doc.addEventListener('touchend',e=>{
+    epubTrace('实时 touchend');const a=start;start=null;const t=e.changedTouches?.[0];
+    if(!a||!t||a.moved||Date.now()-a.at>380||Math.hypot(t.clientX-a.x,t.clientY-a.y)>12||doc.__zhijianSelectionActive||doc.__zhijianSelecting||e.target?.closest?.('a,button,input,textarea,select,[data-zhj-handle]'))return;
+    lastTouch=Date.now();epubTapToggle();
+   },{capture:true,passive:true});
+   doc.addEventListener('click',e=>{epubTrace('实时 click');if(Date.now()-lastTouch>1000&&!doc.__zhijianSelectionActive&&!e.target?.closest?.('a,button,input,textarea,select,[data-zhj-handle]'))epubTapToggle()},{capture:true});
+  }catch(error){epubTrace('实时绑定错误 '+error.message)}
+ };
+ iframe.addEventListener('load',bindLive);
+ bindLive();
+ setTimeout(bindLive,200);
 });
 rendition.hooks.content.register(contents=>{epubDiagnostics.chapterCount++;epubTrace('章节钩子触发');try{contents.document.documentElement.style.touchAction='pan-y';contents.document.body.style.touchAction='pan-y';contents.document.documentElement.style.webkitTouchCallout='none';contents.document.body.style.webkitTouchCallout='none';contents.document.body.style.webkitUserSelect='none';normalizeEpubHeading(contents.document);const ctrl=window.ZhijianSelection?.install(contents.document,{onChange:result=>{if(!active||active.format==='mobi')return;if(!result){if(selectionController===ctrl){selection=null;$('.selected-action')?.remove()}return}selectionController=ctrl;let cfi=null;try{cfi=contents.cfiFromRange(result.range)}catch(e){console.warn('CFI conversion failed',e)}selection={text:result.text,cfi,kind:'epub'};toggleReaderChrome(false);selectionMenu()}});contents.document.addEventListener('contextmenu',e=>e.preventDefault(),{capture:true});contents.document.addEventListener('scroll',()=>toggleReaderChrome(false),{passive:true});contents.document.addEventListener('touchmove',()=>toggleReaderChrome(false),{passive:true});const chapterDoc=contents.document;epubTrace('正文事件监听已注册');if(epubDiagnostics.enabled){for(const type of ['touchstart','touchend','pointerdown','pointerup','click'])contents.window?.addEventListener(type,()=>epubTrace('章节window '+type),{capture:true,passive:true})}
 let tapStart=null,lastTouchAt=0;
