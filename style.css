@@ -179,3 +179,15 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .notes-detail-card .note{margin:12px 0 0}
 .notes-detail-card .note-text{white-space:pre-wrap;overflow-wrap:anywhere}
 @media(min-width:740px){.notes-books{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* App installation entry and platform-specific guide */
+.install-card{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:0 0 18px;padding:16px;border:1px solid #dce8df;border-radius:16px;background:#eaf2e9;color:#304a3e}
+.install-card strong{font-size:16px}.install-card p{margin:6px 0 0;font-size:12px;line-height:1.5;color:#657a6b}.install-card .btn{flex-shrink:0;font-size:13px}
+.install-guide-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:18px;background:#0007;box-sizing:border-box}
+.install-guide-dialog{position:relative;width:100%;max-width:440px;max-height:90vh;overflow:auto;box-sizing:border-box;border-radius:22px;padding:28px 24px max(26px,env(safe-area-inset-bottom));background:#fff;color:#344a3d;box-shadow:0 12px 40px #0003}
+.install-guide-dialog h2{font-size:21px;margin:8px 0 15px}.install-guide-dialog p,.install-guide-dialog li{font-size:15px;line-height:1.8}
+.install-guide-dialog ol{padding-left:22px;margin:12px 0}.install-guide-dialog li{padding:5px 0}
+.install-guide-close{position:absolute;right:15px;top:12px;border:0;background:transparent;color:inherit;font-size:26px;padding:6px 10px}
+.install-guide-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:13px;background:#e6efe7;font-size:28px;color:#477664}
+.install-guide-tip{color:#78897b;font-size:12px!important}.install-guide-done{width:100%;margin-top:14px}
+@media(max-width:360px){.install-card{flex-direction:column;align-items:flex-start}.install-card .btn{width:100%}}
