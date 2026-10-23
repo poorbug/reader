@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.35';
+const APP_VERSION='1.0.36';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='all',view='shelf',notesGroupBookId=null,active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
@@ -18,6 +18,7 @@ function render(){if(active)return;if(view==='shelf'){const filtered=books.filte
 let pendingInstallPrompt=null;
 const isStandalone=()=>window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
 const isiOS=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const isWeChatIOS=()=>isiOS()&&/MicroMessenger/i.test(navigator.userAgent);
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();pendingInstallPrompt=event;document.querySelectorAll('[data-install-action]').forEach(b=>b.hidden=false)});
 window.addEventListener('appinstalled',()=>{pendingInstallPrompt=null;document.querySelector('#install-guide')?.remove();document.querySelector('#install-card')?.remove();toast('纸间已安装到桌面')});
 function installBannerHtml(){
@@ -30,7 +31,7 @@ function installSettingsHtml(){
 function wireInstallButton(){document.querySelectorAll('[data-install-action]').forEach(button=>button.onclick=showInstallGuide)}
 async function showInstallGuide(){
  if(isStandalone())return toast('你正在使用桌面版纸间');
- if(pendingInstallPrompt){
+ if(pendingInstallPrompt&&!isiOS()){
   const prompt=pendingInstallPrompt;pendingInstallPrompt=null;
   try{await prompt.prompt();await prompt.userChoice}catch(error){console.warn('Install prompt unavailable',error)}
   return;
@@ -38,14 +39,21 @@ async function showInstallGuide(){
  document.querySelector('#install-guide')?.remove();
  const overlay=document.createElement('div');overlay.id='install-guide';overlay.className='install-guide-overlay';
  overlay.setAttribute('role','presentation');
- const ios=isiOS();
- const guide=ios?'<p>在 Safari 中打开纸间，按下面两步添加到主屏幕：</p><ol><li>点击 Safari 的<strong>分享</strong>按钮（方框向上箭头）。</li><li>选择<strong>添加到主屏幕</strong>，然后确认<strong>添加</strong>。</li></ol><p class="install-guide-tip">如果当前在微信等应用的内置浏览器里，请先选择“在 Safari 中打开”。不同 iOS 版本菜单位置可能不同。</p>':'<p>请打开浏览器菜单，选择<strong>安装应用</strong>或<strong>添加到主屏幕</strong>。如果浏览器支持一键安装，安装选项出现时可以直接确认。</p>';
+ const ios=isiOS(),wechat=isWeChatIOS();
+ // Keep the original location (including ?book=...) when guiding people out of WeChat.
+ const address=location.href;
+ const guide=wechat
+  ?'<p>你正在微信中打开「纸间」。想安装到 iPhone 桌面，需要先在 Safari 打开。</p><ol><li>点击微信页面右上角的<strong>···</strong>。</li><li>在菜单中选择<strong>在浏览器打开</strong>或<strong>在 Safari 中打开</strong>（名称可能随微信版本变化）。</li><li>确认打开的是 <strong>Safari</strong>；然后点击 Safari 的<strong>分享</strong>按钮，选择<strong>添加到主屏幕</strong>。</li></ol><p class="install-guide-tip">请保留原始分享链接的完整地址，包括 ?book= 参数。微信不能直接安装 PWA，菜单中也不一定提供 Safari 选项。</p><button type="button" class="btn ghost install-copy-link">复制当前完整链接</button>'
+  :ios
+   ?'<p>通过 Safari 添加「纸间」到 iPhone 主屏幕：</p><ol><li>点击 Safari 的<strong>分享</strong>按钮（方框向上箭头）。</li><li>选择<strong>添加到主屏幕</strong>，然后确认<strong>添加</strong>。</li></ol><p class="install-guide-tip">如果此页面不是 Safari，请先在 Safari 打开。安装后的书籍数据与 Safari 分开存储。</p>'
+   :'<p>请打开浏览器菜单，选择<strong>安装应用</strong>或<strong>添加到主屏幕</strong>。如果浏览器支持一键安装，可直接确认。</p>';
  overlay.innerHTML='<div class="install-guide-dialog" role="dialog" aria-modal="true" aria-label="安装纸间"><button type="button" class="install-guide-close" aria-label="关闭安装指引">×</button><div class="install-guide-icon">▤</div><h2>添加「纸间」到桌面</h2>'+guide+'<button type="button" class="btn install-guide-done">我知道了</button></div>';
  document.body.append(overlay);
  const close=()=>overlay.remove();
  overlay.addEventListener('click',event=>{if(event.target===overlay)close()});
  overlay.querySelector('.install-guide-close').onclick=close;
  overlay.querySelector('.install-guide-done').onclick=close;
+ const copy=overlay.querySelector('.install-copy-link');if(copy)copy.onclick=async()=>{try{await navigator.clipboard.writeText(address);toast('链接已复制，可粘贴到 Safari 地址栏')}catch{toast('复制失败，请使用微信的复制链接功能')} };
 }
 const updateState={checking:false,ready:false,remoteVersion:null,message:'点击检查更新，从 GitHub Pages 获取最新版本。'};
 function paintUpdateStatus(){
