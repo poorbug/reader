@@ -30,3 +30,7 @@ jobs:
         run: node tests/foliate-epub.cjs
       - name: Verify WebKit foliate EPUB compatibility
         run: BROWSER=webkit node tests/foliate-epub.cjs
+      - name: Verify Chromium seamless chapter scrolling
+        run: node tests/continuous-scroll.cjs
+      - name: Verify WebKit seamless chapter scrolling
+        run: BROWSER=webkit node tests/continuous-scroll.cjs
