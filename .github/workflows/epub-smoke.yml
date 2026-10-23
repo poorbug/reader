@@ -1,7 +1,5 @@
 name: EPUB reader interaction test
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 jobs:
   epub-tap:
