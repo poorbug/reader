@@ -4,7 +4,7 @@
 <style>
 html,body{height:100%;margin:0;background:#f6f0e5;color:#33453b;font-family:-apple-system,"PingFang SC",sans-serif}
 main{display:flex;flex-direction:column;height:100dvh;min-height:0}
-header{display:flex;align-items:center;gap:10px;min-height:52px;padding:6px 12px;background:#e5ede5}
+header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:52px;padding:8px 12px;background:#e5ede5}#url{flex:1;min-width:140px;padding:8px;border:1px solid #b2c7b8;border-radius:7px}#load-url{padding:8px 10px}#status{width:100%;flex-basis:100%}
 #file{max-width:50%;font-size:12px}#status{font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #reader{flex:1;min-height:0;position:relative;overflow:hidden}
 foliate-view{display:block;width:100%;height:100%;touch-action:pan-y}
@@ -14,7 +14,7 @@ foliate-view{display:block;width:100%;height:100%;touch-action:pan-y}
 #toc.visible{display:block}#toc button{display:block;width:100%;text-align:left;padding:10px;background:none;border:0;border-bottom:1px solid #ddd}
 button{cursor:pointer}#test-log{font-size:11px;padding:5px 10px;max-height:62px;overflow:auto;background:#e2ebe4;white-space:pre-wrap}
 </style></head>
-<body><main><header><input id="file" type="file" accept=".epub,application/epub+zip"><span id="status">请选择 EPUB 进行独立验证</span></header>
+<body><main><header><input id="file" type="file" accept=".epub,application/epub+zip"><input id="url" type="url" inputmode="url" placeholder="粘贴 EPUB HTTPS 文件地址"><button id="load-url" type="button">从地址打开</button><span id="status" role="status">请选择文件或输入 EPUB 下载地址</span></header>
 <div id="reader"><div id="holder" style="height:100%"></div><div id="toc"></div><nav id="toolbar"><button id="toc-btn">目录</button><button id="smaller">A−</button><button id="larger">A+</button><button id="close">收起</button></nav></div>
 <div id="test-log" aria-live="polite">尚未打开书籍</div></main>
 <script type="module">
@@ -32,8 +32,8 @@ function wire(doc){
 }
 function setPrefs(){view?.renderer?.setStyles?.('html,body{font-size:'+size+'px!important;line-height:1.8!important;background:#f6f0e5!important;color:#33453b!important}')}
 const flatten=items=>(items||[]).flatMap(x=>[x,...flatten(x.subitems)]);
-$('#file').onchange=async event=>{
- const file=event.target.files?.[0];if(!file)return;
+async function openFile(file){
+ if(!file)return;
  $('#status').textContent='正在解析 EPUB…';$('#holder').replaceChildren();$('#toc').classList.remove('visible');$('#toolbar').classList.remove('visible');
  try{
   await import('./vendor/foliate-js/view.js');
@@ -49,6 +49,30 @@ $('#file').onchange=async event=>{
   for(const entry of toc){const btn=document.createElement('button');btn.textContent=entry.label||'章节';btn.onclick=async()=>{await view.goTo(entry.href);$('#toc').classList.remove('visible')};$('#toc').append(btn)}
   $('#status').textContent='EPUB 已打开 · '+(book.metadata?.title||file.name);log('已打开 EPUB；轻点正文测试菜单');
  }catch(error){console.error(error);$('#status').textContent='EPUB 打开失败: '+error.message;log('打开失败 '+error.message)}
+}
+$('#file').onchange=event=>openFile(event.target.files?.[0]);
+$('#load-url').onclick=async()=>{
+ const button=$('#load-url');button.disabled=true;
+ try{
+  let url=new URL($('#url').value.trim(),location.href);
+  if(url.protocol!=='https:'&&!(url.protocol==='http:'&&url.hostname==='localhost'))throw Error('请使用 HTTPS EPUB 文件地址');
+  if(url.username||url.password)throw Error('地址不能包含账号或密码');
+  if(url.hostname==='github.com'){
+   const match=url.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/);
+   if(match){const [,owner,repository,branch,file]=match;
+    url=new URL(owner==='poorbug'&&repository==='reader'&&branch==='main'?'https://poorbug.github.io/reader/'+file:'https://raw.githubusercontent.com/'+owner+'/'+repository+'/'+branch+'/'+file);
+   }
+  }
+  $('#status').textContent='正在下载 EPUB…';
+  const response=await fetch(url.href,{mode:'cors',credentials:'omit'});
+  if(!response.ok)throw Error('下载失败 HTTP '+response.status);
+  const limit=30*1024*1024;
+  if(Number(response.headers.get('content-length'))>limit)throw Error('文件超过 30MB');
+  const blob=await response.blob();if(blob.size>limit)throw Error('文件超过 30MB');
+  const head=new Uint8Array(await blob.slice(0,4).arrayBuffer());if(head[0]!==80||head[1]!==75)throw Error('下载结果不是 EPUB ZIP 文件');
+  const name=decodeURIComponent(url.pathname.split('/').pop()||'online.epub');
+  await openFile(new File([blob],name.toLowerCase().endsWith('.epub')?name:name+'.epub',{type:'application/epub+zip'}));
+ }catch(error){$('#status').textContent='地址导入失败：'+error.message;log('地址导入失败 '+error.message)}finally{button.disabled=false}
 };
 $('#toc-btn').onclick=()=>$('#toc').classList.toggle('visible');
 $('#smaller').onclick=()=>{size=Math.max(14,size-2);setPrefs()};
