@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.47';
+const APP_VERSION='1.0.48';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='reading',view='shelf',notesGroupBookId=null,active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
@@ -209,6 +209,14 @@ rendition.on('rendered',(_section,view)=>{
   if(!doc||doc.__zhijianFrameTapInstalled)return;
   doc.__zhijianFrameTapInstalled=true;
   epubTrace('实际章节 iframe 已绑定: '+(frame?'yes':'view'));
+  if(epubDiagnostics.enabled&&frame){
+   const r=frame.getBoundingClientRect();
+   epubTrace('iframe 区域 '+Math.round(r.width)+'×'+Math.round(r.height)+' 事件目标 '+(document.elementFromPoint(window.innerWidth/2,window.innerHeight/2)?.tagName||'?'));
+   for(const type of ['pointerdown','touchstart','click']){
+    frame.addEventListener(type,()=>epubTrace('iframe元素 '+type),{capture:true,passive:true});
+    doc.defaultView?.addEventListener(type,()=>epubTrace('iframe窗口 '+type),{capture:true,passive:true});
+   }
+  }
   let start=null,lastTouch=0;
   const skip=e=>e.target?.closest?.('a,button,input,textarea,select,[data-zhj-handle]');
   doc.addEventListener('touchstart',e=>{
