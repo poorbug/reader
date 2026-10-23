@@ -240,7 +240,7 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 /* v1.0.42: identical title positioning and sticky toolbar header on every main tab */
 .app{padding-top:18px}
 .app:has(.tabs){padding-top:18px}
-.app.with-install-strip,.app.with-install-strip:has(.tabs){padding-top:calc(55px + env(safe-area-inset-top,0px))}
+.app.with-install-strip,.app.with-install-strip:has(.tabs){padding-top:calc(68px + env(safe-area-inset-top,0px))}
 .app .top{
  position:sticky;top:0;z-index:30;
  background:#f8f6f0;
@@ -249,7 +249,7 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
  min-height:62px;
  align-items:flex-start;
 }
-.app.with-install-strip .top{top:calc(39px + env(safe-area-inset-top,0px))}
+.app.with-install-strip .top{top:calc(48px + env(safe-area-inset-top,0px))}
 .app .top .eyebrow{font-size:9px;letter-spacing:2px}
 .app .top h1{font-size:25px;line-height:1.15;margin:3px 0 3px}
 .app .top .shelf-subtitle{font-size:11px;line-height:1.4;margin:0;color:#89968c}
