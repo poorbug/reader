@@ -191,3 +191,11 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .install-guide-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:13px;background:#e6efe7;font-size:28px;color:#477664}
 .install-guide-tip{color:#78897b;font-size:12px!important}.install-guide-done{width:100%;margin-top:14px}
 @media(max-width:360px){.install-card{flex-direction:column;align-items:flex-start}.install-card .btn{width:100%}}
+
+/* v1.0.37: compact dismissible installation notice above the shelf header */
+.app .install-strip{display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:9px 10px 9px 13px;border:1px solid #d9e7dd;border-radius:11px;background:#eaf2e9;color:#365345;min-height:38px;box-sizing:border-box}
+.install-strip-message{flex:1;min-width:0;font-size:12px;line-height:1.45}
+.install-strip-link{flex-shrink:0;border:0;background:transparent;color:#32705b;font-size:12px;font-weight:650;padding:6px 2px;white-space:nowrap}
+.install-strip-close{flex-shrink:0;border:0;background:transparent;color:#86998e;font-size:22px;line-height:1;padding:4px 3px 5px 7px;min-width:27px;min-height:30px}
+.install-strip-link:focus-visible,.install-strip-close:focus-visible{outline:2px solid #407f65;outline-offset:2px}
+@media(max-width:360px){.app .install-strip{flex-direction:row;align-items:center}.install-strip-message{font-size:11px}.install-strip-link{width:auto;font-size:11px}}
