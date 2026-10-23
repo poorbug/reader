@@ -255,3 +255,8 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .app .top .shelf-subtitle{font-size:11px;line-height:1.4;margin:0;color:#89968c}
 .app .install-strip{z-index:40}
 @media(max-width:380px){.app .top h1{font-size:23px}}
+
+/* EPUB fallback tool access, outside the book iframe */
+.immersive-reader .reader-edge-toggle{position:absolute;right:0;top:46%;z-index:38;width:30px;height:54px;border:0;border-radius:10px 0 0 10px;background:rgba(61,105,91,.78);color:#fff;font-size:17px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;box-shadow:0 2px 10px #0002}
+.immersive-reader .reader-edge-toggle[hidden]{display:none}
+.immersive-reader.chrome-visible .reader-edge-toggle{opacity:.45}
