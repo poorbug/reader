@@ -379,14 +379,11 @@ async function openInlineNoteActions(noteId){
 }
 async function syncNoteMark(note){
  if(!active||active.id!==note.bookId)return;
- if(false)updateEpubNoteMark(note);
- else if(['mobi','epub'].includes(active.format))postMobiNoteChange('MOBI_NOTE_UPSERT',note);
+ if(['mobi','epub'].includes(active.format))postMobiNoteChange('MOBI_NOTE_UPSERT',note);
 }
 async function removeNoteMark(note){
- if(!active||active.id!==note.bookId)return;
- if((active.format||'epub')==='epub'&&rendition&&note.cfi&&false){
-  try{rendition.annotations.remove(note.cfi,'underline');rendition.annotations.remove(note.cfi,'highlight')}catch(e){console.warn(e)}
- }else if(['mobi','epub'].includes(active.format))postMobiNoteChange('MOBI_NOTE_REMOVE',note);
+ if(active?.id!==note.bookId)return;
+ if(['mobi','epub'].includes(active.format))postMobiNoteChange('MOBI_NOTE_REMOVE',note);
 }
 async function showBookNotes(){
  const p=$('#reading-settings'),bookId=active?.id;
