@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>纸间 · EPUB 引擎兼容性测试</title>
+<style>
+html,body{height:100%;margin:0;background:#f6f0e5;color:#33453b;font-family:-apple-system,"PingFang SC",sans-serif}
+main{display:flex;flex-direction:column;height:100dvh;min-height:0}
+header{display:flex;align-items:center;gap:10px;min-height:52px;padding:6px 12px;background:#e5ede5}
+#file{max-width:50%;font-size:12px}#status{font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#reader{flex:1;min-height:0;position:relative;overflow:hidden}
+foliate-view{display:block;width:100%;height:100%;touch-action:pan-y}
+#toolbar{display:none;position:absolute;left:0;right:0;bottom:0;padding:13px;background:#294739;color:white;z-index:20;gap:12px}
+#toolbar.visible{display:flex}
+#toc{display:none;position:absolute;inset:15% 7% 12%;z-index:21;background:#f6f0e5;overflow:auto;padding:14px;box-shadow:0 6px 24px #0005}
+#toc.visible{display:block}#toc button{display:block;width:100%;text-align:left;padding:10px;background:none;border:0;border-bottom:1px solid #ddd}
+button{cursor:pointer}#test-log{font-size:11px;padding:5px 10px;max-height:62px;overflow:auto;background:#e2ebe4;white-space:pre-wrap}
+</style></head>
+<body><main><header><input id="file" type="file" accept=".epub,application/epub+zip"><span id="status">请选择 EPUB 进行独立验证</span></header>
+<div id="reader"><div id="holder" style="height:100%"></div><div id="toc"></div><nav id="toolbar"><button id="toc-btn">目录</button><button id="smaller">A−</button><button id="larger">A+</button><button id="close">收起</button></nav></div>
+<div id="test-log" aria-live="polite">尚未打开书籍</div></main>
+<script type="module">
+const $=s=>document.querySelector(s);
+let view,book,size=18,toc=[],tapCount=0;
+const log=msg=>{$('#test-log').textContent=msg+' | 点击次数 '+tapCount};
+const show=()=>{$('#toolbar').classList.toggle('visible');log('工具栏 '+($('#toolbar').classList.contains('visible')?'显示':'隐藏'))};
+function wire(doc){
+ if(!doc||doc.__zhjTestBound)return;doc.__zhjTestBound=true;
+ let p=null,lastTouch=0;
+ doc.addEventListener('touchstart',e=>{const t=e.touches[0];p=t?{x:t.clientX,y:t.clientY,when:Date.now(),moved:false}:null},{capture:true,passive:true});
+ doc.addEventListener('touchmove',e=>{const t=e.touches[0];if(t&&p&&Math.hypot(t.clientX-p.x,t.clientY-p.y)>12)p.moved=true},{capture:true,passive:true});
+ doc.addEventListener('touchend',e=>{const t=e.changedTouches[0],v=p;p=null;if(!t||!v||v.moved||Date.now()-v.when>380||Math.hypot(t.clientX-v.x,t.clientY-v.y)>12||e.target.closest?.('a,button'))return;lastTouch=Date.now();tapCount++;show()},{capture:true,passive:true});
+ doc.addEventListener('click',e=>{if(Date.now()-lastTouch<700||e.target.closest?.('a,button'))return;tapCount++;show()},{capture:true});
+}
+function setPrefs(){view?.renderer?.setStyles?.('html,body{font-size:'+size+'px!important;line-height:1.8!important;background:#f6f0e5!important;color:#33453b!important}')}
+const flatten=items=>(items||[]).flatMap(x=>[x,...flatten(x.subitems)]);
+$('#file').onchange=async event=>{
+ const file=event.target.files?.[0];if(!file)return;
+ $('#status').textContent='正在解析 EPUB…';$('#holder').replaceChildren();$('#toc').classList.remove('visible');$('#toolbar').classList.remove('visible');
+ try{
+  await import('./vendor/foliate-js/view.js');
+  view=document.createElement('foliate-view');$('#holder').append(view);
+  await view.open(file);book=view.book;
+  if(!view.renderer)throw Error('foliate-js renderer 未初始化');
+  view.renderer.setAttribute('flow','scrolled');view.renderer.setAttribute('margin','0px');view.renderer.setAttribute('max-inline-size','1000px');
+  view.renderer.addEventListener('load',e=>wire(e.detail?.doc));
+  view.addEventListener('relocate',()=>{for(const item of view.renderer.getContents())wire(item.doc)});
+  setPrefs();await view.goTo(0);
+  for(const item of view.renderer.getContents())wire(item.doc);
+  toc=flatten(book.toc);$('#toc').innerHTML='';
+  for(const entry of toc){const btn=document.createElement('button');btn.textContent=entry.label||'章节';btn.onclick=async()=>{await view.goTo(entry.href);$('#toc').classList.remove('visible')};$('#toc').append(btn)}
+  $('#status').textContent='EPUB 已打开 · '+(book.metadata?.title||file.name);log('已打开 EPUB；轻点正文测试菜单');
+ }catch(error){console.error(error);$('#status').textContent='EPUB 打开失败: '+error.message;log('打开失败 '+error.message)}
+};
+$('#toc-btn').onclick=()=>$('#toc').classList.toggle('visible');
+$('#smaller').onclick=()=>{size=Math.max(14,size-2);setPrefs()};
+$('#larger').onclick=()=>{size=Math.min(32,size+2);setPrefs()};
+$('#close').onclick=()=>$('#toolbar').classList.remove('visible');
+</script></body></html>
