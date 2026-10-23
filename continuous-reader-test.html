@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<title>纸间 · 连续章节实验阅读器</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#30453b;background:#f5f0e7}
+*{box-sizing:border-box}body{margin:0}button,input{font:inherit}
+#app{height:100dvh;display:flex;flex-direction:column}
+#controls{padding:9px 12px;background:#e4eee7;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#file{max-width:42%;font-size:12px}#url{min-width:125px;flex:1;border:1px solid #a8c3b2;border-radius:7px;padding:7px;font-size:13px}
+#load-url{border:0;border-radius:7px;padding:8px 10px;background:#397361;color:white;font-size:13px}
+#status{flex-basis:100%;font-size:12px;color:#64746c;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+#surface{position:relative;flex:1;min-height:0}
+#scroll{height:100%;overflow:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#scroll::-webkit-scrollbar{display:none}
+.chapter{position:relative;min-height:1px;overflow:hidden;background:var(--page-bg,#f5f0e7)}
+.chapter iframe{width:100%;display:block;border:0;overflow:hidden;background:transparent;touch-action:pan-y}
+.chapter.placeholder{background:var(--page-bg,#f5f0e7)}
+.chapter-gap{height:6px;background:var(--page-bg,#f5f0e7)}
+#toolbar{position:absolute;bottom:0;left:0;right:0;z-index:20;background:#dbe9de;display:none;gap:7px;padding:12px max(10px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom));justify-content:space-around}
+#toolbar.visible{display:flex}
+#toolbar button,#selection-tools button{background:none;border:0;color:#2b5548;font-size:14px}
+#selection-tools{position:absolute;z-index:24;bottom:76px;left:12px;right:12px;border-radius:12px;background:#dce9df;display:none;padding:14px;gap:22px;justify-content:center}
+#selection-tools.visible{display:flex}
+#panel{position:absolute;z-index:23;bottom:66px;left:5%;width:90%;max-height:70%;overflow:auto;display:none;background:#f8f7f0;border-radius:13px;padding:18px;box-shadow:0 4px 24px #0004}
+#panel.visible{display:block}
+#panel button{padding:9px 8px;border:0;background:transparent;color:#336953}
+#panel .row{border-bottom:1px solid #d9dfd7;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#panel .entry{display:block;width:100%;text-align:left}
+#progress{position:absolute;right:10px;top:8px;pointer-events:none;background:#355849cb;color:white;border-radius:15px;padding:5px 10px;font-size:11px;z-index:15}
+#log{font-size:11px;padding:5px 10px;background:#e4ede5;max-height:34px;overflow:hidden;white-space:nowrap}
+</style></head><body>
+<div id="app">
+<header id="controls">
+<input id="file" type="file" accept=".epub,.mobi">
+<input id="url" type="url" placeholder="EPUB / MOBI HTTPS 文件地址">
+<button id="load-url">从地址打开</button>
+<div id="status" role="status">连续章节渲染实验 · 本地文件或 HTTPS 链接</div>
+</header>
+<main id="surface">
+<div id="scroll"></div><div id="progress" hidden></div>
+<div id="panel"><button id="panel-close" style="float:right">关闭</button><div id="panel-body"></div></div>
+<div id="selection-tools"><button id="mark">划线</button><button id="note">笔记</button><button id="copy">复制</button><button id="clear">取消</button></div>
+<footer id="toolbar"><button id="toc">目录</button><button id="notes">笔记</button><button id="minus">A−</button><button id="plus">A+</button><button id="hide">隐藏</button></footer>
+</main><div id="log">尚未加载书籍</div></div>
+<script src="./selection.js"></script>
+<script type="module">
+const $=selector=>document.querySelector(selector);
+let book=null,CFI=null,records=[],key='',items=[],current=0,selected=null,selectionControl=null,fontSize=19,generation=0,lastTap=0,saveTimer=null,updateTimer=null,restoring=false;
+const MAX_ACTIVE=5,BEFORE=2,AFTER=2,MAX_SIZE=30*1024*1024;
+const logger=message=>{$('#log').textContent=message;console.log('[continuous]',message)};
+const fmt=index=>(index+1)+' / '+(book?.sections?.length||0)+' 章';
+function storageName(){return 'zhijian-continuous-test-v1:'+key}
+function readStorage(){try{return JSON.parse(localStorage.getItem(storageName())||'{}')}catch{return {}}}
+function persist(patch){if(!key)return;try{localStorage.setItem(storageName(),JSON.stringify({...readStorage(),...patch}))}catch(error){logger('本地存储失败：'+error.message)}}
+function hidePanels(){$('#toolbar').classList.remove('visible');$('#panel').classList.remove('visible')}
+function toggleTools(){if(selected?.text)return;const time=Date.now();if(time-lastTap<550)return;lastTap=time;$('#toolbar').classList.toggle('visible')}
+function clearSelection(){const controller=selectionControl;selectionControl=null;selected=null;$('#selection-tools').classList.remove('visible');controller?.clear()}
+async function hashFile(file){const bytes=await file.arrayBuffer();const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));return [Array.from(hash,x=>x.toString(16).padStart(2,'0')).join(''),bytes]}
+function measure(item){
+ if(item.state!=='ready'||!item.frame?.contentDocument)return;
+ const doc=item.frame.contentDocument;
+ const html=doc.documentElement,body=doc.body;
+ if(!html||!body)return;
+ const newHeight=Math.max(20,Math.ceil(Math.max(html.scrollHeight,body.scrollHeight,body.getBoundingClientRect().height))+2);
+ const oldHeight=item.height;
+ if(Math.abs(newHeight-oldHeight)<2)return;
+ const scroller=$('#scroll');
+ const before=item.el.getBoundingClientRect().bottom<scroller.getBoundingClientRect().top+4;
+ item.height=newHeight;item.frame.style.height=newHeight+'px';
+ if(before&&!restoring)scroller.scrollTop+=newHeight-oldHeight;
+}
+function applyStyles(doc){
+ const style=doc.createElement('style');
+ style.dataset.zhijianContinuous='';
+ style.textContent='html,body{height:auto!important;min-height:0!important;overflow:visible!important;background:#f5f0e7!important;color:#30443a!important}html{margin:0!important;padding:0!important}body{box-sizing:border-box!important;width:auto!important;margin:0!important;padding:18px 20px 12px!important;font-family:-apple-system,"PingFang SC",sans-serif!important;font-size:'+fontSize+'px!important;line-height:1.8!important}p{margin-bottom:.8em!important}h1{font-size:'+Math.round(fontSize*1.4)+'px!important}h2{font-size:'+Math.round(fontSize*1.2)+'px!important}img,svg,video,table{max-width:100%!important}';
+ doc.head?.appendChild(style);
+ doc.body.style.setProperty('-webkit-touch-callout','none','important');
+}
+function getSelectedCFI(index,range){
+ if(!CFI||!range)return null;
+ try{return CFI.joinIndir(book.sections[index].cfi??CFI.fake.fromIndex(index),CFI.fromRange(range))}catch(e){logger('无法记录文字位置: '+e.message);return null}
+}
+function resolveCFI(value){
+ try{
+  if(book.resolveCFI)return book.resolveCFI(value);
+  const parts=CFI.parse(value),index=CFI.fake.toIndex((parts.parent??parts).shift());
+  return {index,anchor:doc=>CFI.toRange(doc,parts)};
+ }catch{return null}
+}
+function createUnderlines(item){
+ const doc=item.frame?.contentDocument;
+ if(!doc||item.state!=='ready')return;
+ doc.querySelector('[data-zj-note-layer]')?.remove();
+ const layer=doc.createElement('div');layer.dataset.zjNoteLayer='';layer.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:1000';
+ doc.body.append(layer);
+ for(const note of records){
+  if(!note.cfi)continue;
+  const resolved=resolveCFI(note.cfi);
+  if(resolved?.index!==item.index)continue;
+  try{
+   const range=resolved.anchor(doc);if(!range?.getClientRects)continue;
+   for(const rect of range.getClientRects()){
+    if(rect.width<1||rect.height<1)continue;
+    const line=doc.createElement('div');
+    line.style.cssText='position:absolute;pointer-events:none;background:#4b8174;height:2.5px;left:'+(rect.left+doc.defaultView.scrollX)+'px;top:'+(rect.bottom-2+doc.defaultView.scrollY)+'px;width:'+rect.width+'px';
+    layer.append(line);
+   }
+  }catch(e){console.warn('笔记划线定位失败',e)}
+ }
+}
+function wireText(item,doc){
+ const api=window.ZhijianSelection?.install(doc,{onChange:detail=>{
+  if(!detail?.text){if(selected?.index===item.index){selected=null;$('#selection-tools').classList.remove('visible')}return}
+  selected={index:item.index,text:detail.text,range:detail.range.cloneRange()};
+  selectionControl=api;hidePanels();$('#selection-tools').classList.add('visible');
+ }});
+ let start=null,lastTouch=0;
+ doc.addEventListener('touchstart',event=>{
+  if(event.touches.length!==1)return;const t=event.touches[0];start={x:t.clientX,y:t.clientY,time:Date.now(),moved:false}
+ },{capture:true,passive:true});
+ doc.addEventListener('touchmove',event=>{
+  if(start&&event.touches.length===1){const t=event.touches[0];if(Math.hypot(t.clientX-start.x,t.clientY-start.y)>12)start.moved=true}
+ },{capture:true,passive:true});
+ doc.addEventListener('touchend',event=>{
+  const p=start;start=null;const t=event.changedTouches?.[0];
+  if(!p||!t||p.moved||Date.now()-p.time>380||Math.hypot(t.clientX-p.x,t.clientY-p.y)>12||doc.__zhijianSelecting||doc.__zhijianSelectionActive||event.target?.closest?.('a,button,input'))return;
+  lastTouch=Date.now();toggleTools();
+ },{capture:true,passive:true});
+ doc.addEventListener('click',event=>{
+  const link=event.target.closest?.('a[href]');
+  if(link){
+   const href=link.getAttribute('href');
+   if(href&&href[0]==='#'){event.preventDefault();const target=doc.getElementById(href.slice(1));if(target)target.scrollIntoView();return}
+   if(href&&!/^(https?:|mailto:|javascript:)/i.test(href)){
+    event.preventDefault();const url=book.sections[item.index].resolveHref?.(href);
+    if(url)goTo(book.resolveHref?.(url));return
+   }
+   return;
+  }
+  if(Date.now()-lastTouch<900||doc.__zhijianSelecting||doc.__zhijianSelectionActive)return;
+  toggleTools();
+ },{capture:true});
+ doc.addEventListener('load',()=>{measure(item);createUnderlines(item)},{capture:true,passive:true});
+}
+async function mount(item,gen){
+ if(item.state==='ready'||item.state==='loading'||gen!==generation)return;
+ item.state='loading';const sec=book.sections[item.index];
+ try{
+  const src=await sec.load();if(gen!==generation){sec.unload?.();return}
+  if(!src)throw Error('章节没有内容');
+  const iframe=document.createElement('iframe');iframe.setAttribute('sandbox','allow-same-origin allow-scripts');
+  iframe.setAttribute('scrolling','no');iframe.title='第 '+(item.index+1)+' 章';
+  iframe.style.cssText='display:block;width:100%;height:'+item.height+'px;border:0;overflow:hidden;background:transparent';
+  item.frame=iframe;item.el.classList.remove('placeholder');item.el.replaceChildren(iframe);
+  await new Promise((resolve,reject)=>{
+   iframe.onload=resolve;iframe.onerror=()=>reject(new Error('iframe 加载失败'));
+   iframe.src=src;
+  });
+  if(gen!==generation)return;
+  const doc=iframe.contentDocument;if(!doc?.body)throw Error('无法访问章节正文');
+  applyStyles(doc);
+  item.state='ready';wireText(item,doc);
+  const observer=new ResizeObserver(()=>{measure(item);createUnderlines(item)});
+  observer.observe(doc.documentElement);observer.observe(doc.body);
+  item.observer=observer;
+  doc.fonts?.ready?.then(()=>measure(item)).catch(()=>{});
+  requestAnimationFrame(()=>{measure(item);createUnderlines(item)});
+  for(const image of doc.images||[]){if(!image.complete)image.addEventListener('load',()=>{measure(item);createUnderlines(item)},{once:true})}
+  if(item.onReady){for(const fn of item.onReady.splice(0))fn()}
+ }catch(error){
+  item.state='failed';item.el.textContent='章节 '+(item.index+1)+' 加载失败：'+error.message;
+  item.el.style.padding='20px';logger(error.message);
+ }
+}
+function release(item){
+ if(item.state!=='ready'&&item.state!=='failed')return;
+ item.observer?.disconnect();item.observer=null;item.frame=null;item.state='idle';
+ item.el.classList.add('placeholder');item.el.replaceChildren();item.el.style.padding='';
+ item.el.style.minHeight=item.height+'px';
+ try{book.sections[item.index].unload?.()}catch{}
+}
+function activeIndex(){
+ const root=$('#scroll'),bounds=root.getBoundingClientRect();
+ const y=bounds.top+Math.min(110,bounds.height*.25);
+ const sections=items.filter(item=>item.el.getBoundingClientRect().bottom>y);
+ return sections.length?sections[0].index:Math.max(0,items.length-1);
+}
+function updateActive(){
+ if(!book||restoring)return;
+ current=activeIndex();
+ $('#progress').hidden=false;$('#progress').textContent=fmt(current);
+ const region=items[current];const top=region.el.offsetTop,scroller=$('#scroll');
+ const fraction=Math.max(0,Math.min(1,(scroller.scrollTop-top)/Math.max(1,region.height-scroller.clientHeight)));
+ clearTimeout(saveTimer);saveTimer=setTimeout(()=>persist({progress:{index:current,fraction}}),450);
+ loadNearby();
+}
+function loadNearby(){
+ if(!items.length)return;
+ const gen=generation,first=Math.max(0,current-BEFORE),last=Math.min(items.length-1,current+AFTER);
+ for(let i=first;i<=last;i++)mount(items[i],gen);
+ for(let i=0;i<items.length;i++){
+  const it=items[i];
+  if(it.state==='ready'&&(i<first||i>last))release(it);
+ }
+}
+function scheduleActive(){clearTimeout(updateTimer);updateTimer=setTimeout(updateActive,70)}
+async function goTo(target){
+ if(!book||!target||!Number.isInteger(target.index)||target.index<0||target.index>=items.length)return;
+ const item=items[target.index];current=target.index;loadNearby();
+ if(item.state!=='ready')await new Promise(resolve=>{item.onReady.push(resolve);mount(item,generation)});
+ if(item.state!=='ready')return;
+ let offset=0;
+ if(typeof target.anchor==='function'){
+  try{
+   const value=target.anchor(item.frame.contentDocument);
+   if(typeof value==='number')offset=value*item.height;
+   else if(value?.getBoundingClientRect)offset=value.getBoundingClientRect().top+(item.frame.contentDocument.defaultView.scrollY||0);
+  }catch(e){logger('目录定位失败：'+e.message)}
+ }
+ $('#scroll').scrollTop=item.el.offsetTop+offset;
+ hidePanels();scheduleActive();
+}
+function tocEntries(list,depth=0){
+ return (list||[]).flatMap(x=>[{...x,depth},...tocEntries(x.subitems,depth+1)]);
+}
+function renderPanel(kind){
+ const body=$('#panel-body');body.replaceChildren();$('#panel').classList.add('visible');$('#toolbar').classList.remove('visible');
+ if(kind==='toc'){
+  const title=document.createElement('h3');title.textContent='目录';body.append(title);
+  for(const entry of tocEntries(book?.toc)){
+   const btn=document.createElement('button');btn.className='entry';btn.style.paddingLeft=(entry.depth*15+6)+'px';btn.textContent=entry.label||'章节';
+   btn.onclick=()=>goTo(book?.resolveHref?.(entry.href));
+   body.append(btn);
+  }
+ }else{
+  const title=document.createElement('h3');title.textContent='本书笔记';body.append(title);
+  for(const note of records){
+   const row=document.createElement('div');row.className='row';
+   const quote=document.createElement('p');quote.style.flexBasis='100%';quote.textContent=note.text+(note.note?' · '+note.note:'');
+   const jump=document.createElement('button');jump.textContent='回到原文';jump.onclick=()=>goTo(resolveCFI(note.cfi));
+   const remove=document.createElement('button');remove.textContent='删除';remove.onclick=()=>{records=records.filter(x=>x.id!==note.id);persist({notes:records});redrawNotes();renderPanel('notes')};
+   row.append(quote,jump,remove);body.append(row);
+  }
+  if(!records.length)body.textContent='暂无笔记';
+ }
+}
+function redrawNotes(){for(const item of items){if(item.state==='ready')createUnderlines(item)}}
+function saveNote(withNote){
+ if(!selected)return;
+ const entry={id:crypto.randomUUID(),text:selected.text,cfi:getSelectedCFI(selected.index,selected.range),note:'',createdAt:Date.now()};
+ if(withNote){const note=prompt('笔记内容：','');if(note===null)return;entry.note=note}
+ records.push(entry);persist({notes:records});redrawNotes();clearSelection();logger('已保存'+(withNote?'笔记':'划线'));
+}
+async function openFile(file){
+ const gen=++generation;$('#status').textContent='正在解析 '+file.name+' …';
+ clearSelection();hidePanels();
+ const old=book;for(const it of items){it.observer?.disconnect();try{old?.sections?.[it.index]?.unload?.()}catch{}}
+ old?.destroy?.();book=null;items=[];$('#scroll').replaceChildren();$('#progress').hidden=true;
+ try{
+  if(file.size>MAX_SIZE)throw Error('测试页限制 30MB');
+  const [hash,bytes]=await hashFile(file);if(gen!==generation)return;
+  const module=await import('./vendor/foliate-js/view.js');
+  CFI=await import('./vendor/foliate-js/epubcfi.js');
+  book=await module.makeBook(new File([bytes],file.name,{type:file.type}));
+  if(gen!==generation)return;
+  if(book.rendition?.layout==='pre-paginated')throw Error('测试页暂不支持固定排版 EPUB');
+  key=hash;records=Array.isArray(readStorage().notes)?readStorage().notes:[];
+  const root=$('#scroll');
+  for(let i=0;i<book.sections.length;i++){
+   const section=document.createElement('section');section.className='chapter placeholder';
+   section.dataset.index=i;
+   const item={index:i,el:section,frame:null,height:Math.max(250,root.clientHeight),state:'idle',observer:null,onReady:[]};
+   section.style.minHeight=item.height+'px';root.append(section);items.push(item);
+  }
+  restoring=true;
+  const saved=readStorage().progress;
+  current=Number.isInteger(saved?.index)?Math.max(0,Math.min(items.length-1,saved.index)):0;
+  loadNearby();
+  const item=items[current];if(item.state!=='ready')await new Promise(resolve=>{item.onReady.push(resolve);mount(item,gen)});
+  root.scrollTop=item.el.offsetTop+(saved?.fraction||0)*Math.max(0,item.height-root.clientHeight);
+  restoring=false;updateActive();
+  $('#status').textContent=(book.metadata?.title||file.name)+' · '+book.sections.length+' 章 · 多章节连续滚动';
+  logger('已加载 '+book.sections.length+' 个章节占位，实际同时保留最多 '+MAX_ACTIVE+' 个章节');
+ }catch(e){restoring=false;$('#status').textContent='打开失败：'+e.message;logger('打开失败 '+e.message);console.error(e)}
+}
+$('#file').onchange=e=>openFile(e.target.files[0]);
+$('#load-url').onclick=async()=>{
+ const btn=$('#load-url');btn.disabled=true;
+ try{
+  let address=new URL($('#url').value.trim());if(address.protocol!=='https:')throw Error('请输入 HTTPS 文件地址');
+  if(address.hostname==='github.com'){const m=address.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/);
+   if(m)address=new URL(m[1]==='poorbug'&&m[2]==='reader'&&m[3]==='main'?'https://poorbug.github.io/reader/'+m[4]:'https://raw.githubusercontent.com/'+m[1]+'/'+m[2]+'/'+m[3]+'/'+m[4])}
+  const response=await fetch(address,{credentials:'omit',mode:'cors'});if(!response.ok)throw Error('HTTP '+response.status);
+  const blob=await response.blob();if(blob.size>MAX_SIZE)throw Error('文件超过 30MB');
+  let name=decodeURIComponent(address.pathname.split('/').at(-1)||'book.epub');if(!/\.(epub|mobi)$/i.test(name))name+='.epub';
+  await openFile(new File([blob],name,{type:blob.type}));
+ }catch(e){$('#status').textContent='地址导入失败：'+e.message}
+ finally{btn.disabled=false}
+};
+$('#scroll').addEventListener('scroll',scheduleActive,{passive:true});
+$('#toc').onclick=()=>renderPanel('toc');$('#notes').onclick=()=>renderPanel('notes');
+$('#panel-close').onclick=()=>$('#panel').classList.remove('visible');
+$('#hide').onclick=()=>$('#toolbar').classList.remove('visible');
+$('#minus').onclick=()=>{fontSize=Math.max(14,fontSize-2);for(const item of items)if(item.state==='ready'){applyStyles(item.frame.contentDocument);measure(item);createUnderlines(item)}};
+$('#plus').onclick=()=>{fontSize=Math.min(32,fontSize+2);for(const item of items)if(item.state==='ready'){applyStyles(item.frame.contentDocument);measure(item);createUnderlines(item)}};
+$('#mark').onclick=()=>saveNote(false);$('#note').onclick=()=>saveNote(true);
+$('#clear').onclick=clearSelection;
+$('#copy').onclick=async()=>{try{await navigator.clipboard.writeText(selected?.text||'')}catch{}clearSelection()};
+</script></body></html>
