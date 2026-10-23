@@ -20,7 +20,7 @@ button{cursor:pointer}#notes{display:none;position:absolute;inset:14% 6% 12%;z-i
 <script src="./selection.js"></script><script type="module">
 const $=s=>document.querySelector(s);
 let view,book,size=18,toc=[],tapCount=0,changing=false,lastChange=0,selectedText='',selectionController=null,selectedRange=null,selectedSection=null,bookKey=null,restoring=false;
-let noteStore=[];const keyPrefix='zhijian-foliate-epub-test-v1:';
+let noteStore=[],notesDrawn=new WeakMap(),noteDrawTimer=null;const keyPrefix='zhijian-foliate-epub-test-v1:';
 const log=msg=>{$('#test-log').textContent=msg+' | 点击次数 '+tapCount};
 const show=()=>{$('#toolbar').classList.toggle('visible');log('工具栏 '+($('#toolbar').classList.contains('visible')?'显示':'隐藏'))};
 async function switchSection(dir){
@@ -63,6 +63,25 @@ function markTextLocation(){
  if(!selectedRange||selectedSection===null||!view)return null;
  try{return view.getCFI(selectedSection,selectedRange)}catch(error){log('CFI 定位失败: '+error.message);return null}
 }
+function underlineRects(rects){
+ const g=document.createElementNS('http://www.w3.org/2000/svg','g');g.setAttribute('fill','#4b8174');
+ for(const r of rects){const line=document.createElementNS('http://www.w3.org/2000/svg','rect');line.setAttribute('x',r.left);line.setAttribute('y',r.bottom-2.5);line.setAttribute('width',r.width);line.setAttribute('height',2.5);g.append(line)}
+ return g;
+}
+function drawSavedNotes(){
+ if(!view?.renderer)return;
+ for(const section of view.renderer.getContents()){
+  if(!section.doc||typeof section.index!=='number')continue;
+  let drawn=notesDrawn.get(section.doc);if(!drawn){drawn=new Set();notesDrawn.set(section.doc,drawn)}
+  for(const n of noteStore){
+   if(!n.cfi||drawn.has(n.cfi))continue;
+   try{if(view.resolveNavigation(n.cfi)?.index!==section.index)continue;
+    drawn.add(n.cfi);Promise.resolve(view.addAnnotation({value:n.cfi})).catch(err=>{drawn.delete(n.cfi);console.warn(err)})
+   }catch(err){console.warn('注释定位失败',err)}
+  }
+ }
+}
+function scheduleNoteDraw(){clearTimeout(noteDrawTimer);noteDrawTimer=setTimeout(drawSavedNotes,120)}
 function renderNotes(){
  const list=$('#notes-list');list.replaceChildren();
  if(!noteStore.length){list.textContent='暂无记录。长按正文后选择划线或笔记。';return}
@@ -72,7 +91,7 @@ function renderNotes(){
   const note=document.createElement('div');note.className='note-comment';note.textContent=n.note||'';
   const jump=document.createElement('button');jump.textContent='回到原文';jump.disabled=!n.cfi;jump.onclick=async()=>{try{await view.goTo(n.cfi);$('#notes').classList.remove('visible');log('已跳转到笔记原文')}catch(error){log('笔记定位失败: '+error.message)}};
   const edit=document.createElement('button');edit.textContent='编辑';edit.onclick=()=>{const next=prompt('编辑笔记：',n.note||'');if(next===null)return;n.note=next;saveTestState({notes:noteStore});renderNotes()};
-  const remove=document.createElement('button');remove.textContent='删除';remove.onclick=()=>{noteStore=noteStore.filter(x=>x.id!==n.id);saveTestState({notes:noteStore});renderNotes()};
+  const remove=document.createElement('button');remove.textContent='删除';remove.onclick=()=>{noteStore=noteStore.filter(x=>x.id!==n.id);if(n.cfi)view.deleteAnnotation({value:n.cfi})?.catch?.(console.warn);notesDrawn=new WeakMap();saveTestState({notes:noteStore});renderNotes()};
   row.append(quote,note,jump,edit,remove);list.append(row);
  }
 }
@@ -82,12 +101,12 @@ function saveSelected(withNote){
  if(value===null)return;
  const cfi=markTextLocation();
  const entry={id:crypto.randomUUID(),text:selectedText,cfi,note:value||'',createdAt:Date.now()};
- noteStore.push(entry);saveTestState({notes:noteStore});renderNotes();clearSelected();log('已保存'+(withNote?'笔记':'划线')+(cfi?'（包含定位）':'（暂时无法定位）'));
+ noteStore.push(entry);saveTestState({notes:noteStore});scheduleNoteDraw();renderNotes();clearSelected();log('已保存'+(withNote?'笔记':'划线')+(cfi?'（包含定位）':'（暂时无法定位）'));
 }
 const flatten=items=>(items||[]).flatMap(x=>[x,...flatten(x.subitems)]);
 async function openFile(file){
  if(!file)return;
- bookKey=null;noteStore=[];
+ bookKey=null;noteStore=[];notesDrawn=new WeakMap();
  $('#status').textContent='正在解析 EPUB…';selectedText='';selectionController=null;$('#selection-actions').classList.remove('visible');$('#holder').replaceChildren();$('#toc').classList.remove('visible');$('#toolbar').classList.remove('visible');
  try{
   await import('./vendor/foliate-js/view.js');
@@ -96,16 +115,18 @@ async function openFile(file){
   await view.open(new File([buffer],file.name,{type:file.type||'application/epub+zip'}));book=view.book;
   if(!view.renderer)throw Error('foliate-js renderer 未初始化');
   view.renderer.setAttribute('flow','scrolled');view.renderer.setAttribute('margin','0px');view.renderer.setAttribute('max-inline-size','1000px');
-  view.renderer.addEventListener('load',e=>wire(e.detail?.doc));
+  view.renderer.addEventListener('load',e=>{wire(e.detail?.doc);scheduleNoteDraw()});
   view.addEventListener('relocate',event=>{
    for(const item of view.renderer.getContents())wire(item.doc);
+   scheduleNoteDraw();
    if(restoring)return;
    const d=event.detail||{};const cfi=d.cfi||d.start?.cfi||d.location?.cfi;
    if(cfi)saveTestState({progress:cfi});
   });
+  view.addEventListener('draw-annotation',event=>{try{event.detail.draw(underlineRects)}catch(error){console.warn('绘制下划线失败',error)}});
   setPrefs();const saved=loadTestState();noteStore=Array.isArray(saved.notes)?saved.notes:[];
   restoring=true;try{if(saved.progress){try{await view.goTo(saved.progress);log('已恢复上次阅读位置')}catch(e){await view.goTo(0);log('旧进度无效，已从开头打开')}}else await view.goTo(0)}finally{restoring=false}
-  renderNotes();
+  renderNotes();scheduleNoteDraw();
   for(const item of view.renderer.getContents())wire(item.doc);
   toc=flatten(book.toc);$('#toc').innerHTML='';
   for(const entry of toc){const btn=document.createElement('button');btn.textContent=entry.label||'章节';btn.onclick=async()=>{await view.goTo(entry.href);$('#toc').classList.remove('visible')};$('#toc').append(btn)}
