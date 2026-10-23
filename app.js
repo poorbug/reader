@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.30';
+const APP_VERSION='1.0.31';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='all',view='shelf',notesGroupBookId=null,active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
@@ -130,7 +130,22 @@ async function openReader(k,target){const b=books.find(x=>x.id===k),f=await get(
 function applyTheme(){if(!rendition)return;let [bg,fg]=palette[settings.theme];$('#reader').style.background=bg;$('#reader').style.color=fg;rendition.themes.default({body:{color:fg+' !important',background:bg+' !important','line-height':settings.lineHeight+' !important','padding-left':settings.margin+'px !important','padding-right':settings.margin+'px !important'},p:{'margin-bottom':settings.paragraph+'em !important'},h1:{'font-size':'clamp(22px, '+(settings.size*1.4)+'px, 40px) !important','line-height':'1.5 !important','overflow-wrap':'anywhere'},h2:{'font-size':Math.round(settings.size*1.2)+'px !important','line-height':'1.5 !important'},h3:{'font-size':Math.round(settings.size*1.1)+'px !important','line-height':'1.5 !important'}});rendition.themes.fontSize(settings.size+'px')}
 function removePop(){$('.panel')?.remove();$('.read-tools')?.remove()}
 function showTools(){removePop();let p=document.createElement('div');p.className='read-tools';p.innerHTML='<div class="row">行距 <input type="range" min="1.3" max="2.5" step="0.1" value="'+settings.lineHeight+'" id="lineheight"></div><div class="row">字号 <input type="range" min="14" max="30" value="'+settings.size+'" id="fontsize"> <span id="size">'+settings.size+'</span></div><div class="row">'+Object.entries({paper:'纸张',white:'白色',green:'护眼',dark:'深色'}).map(([k,v])=>'<button class="btn ghost small" data-theme="'+k+'">'+v+'</button>').join('')+'</div><button class="btn ghost small" id="addmark">添加书签</button> ';$('#reader').append(p);$('#fontsize').oninput=e=>{settings.size=+e.target.value;$('#size').textContent=settings.size;applyTheme();saveSettings()};p.querySelectorAll('[data-theme]').forEach(x=>x.onclick=()=>{settings.theme=x.dataset.theme;applyTheme();saveSettings()});$('#lineheight').oninput=e=>{settings.lineHeight=+e.target.value;applyTheme();saveSettings()};$('#addmark').onclick=async()=>{let cfi=rendition.currentLocation()?.start?.cfi;if(cfi){await put('bookmarks',{id:id(),bookId:active.id,cfi,createdAt:now()});toast('书签已保存')}}}
-function showToc(){const p=$('#reading-settings');if(!p)return;if(!p.hidden&&p.dataset.kind==='toc'){closeReaderPanels();return}openReaderPanel('toc');p.innerHTML='<div class="setting-title">目录</div><div id="toc-entries" class="toc-entries">正在读取目录…</div>';if(active?.format==='epub'){const entries=$('#toc-entries');entries.innerHTML=toc.map((x,i)=>'<button class="toc-item" data-index="'+i+'">'+esc(x.label)+'</button>').join('')||'此书没有目录';entries.querySelectorAll('[data-index]').forEach(btn=>btn.onclick=async()=>{await rendition.display(toc[Number(btn.dataset.index)].href);closeReaderPanels()})}else if(active?.format==='mobi'){$('#document-body iframe')?.contentWindow?.postMessage({type:'MOBI_REQUEST_TOC'},location.origin)}else $('#toc-entries').textContent='PDF 暂不支持目录'}
+async function showToc(){
+ const p=$('#reading-settings');if(!p||!active)return;
+ if(!p.hidden&&p.dataset.kind==='toc'){closeReaderPanels();return}
+ openReaderPanel('toc');p.innerHTML='<div class="setting-title">目录与书签</div><div id="toc-entries" class="toc-entries">正在读取目录…</div>';
+ if(active.format==='mobi'){$('#document-body iframe')?.contentWindow?.postMessage({type:'MOBI_REQUEST_TOC'},location.origin);return}
+ if(active.format==='pdf'){$('#toc-entries').textContent='PDF 暂不支持目录';return}
+ const bookId=active.id;
+ const flatten=(items,depth=0)=>items.flatMap(item=>[{label:item.label||'未命名章节',href:item.href,depth},...flatten(item.subitems||[],depth+1)]);
+ const entries=flatten(toc||[]);
+ const marks=(await all('bookmarks')).filter(m=>m.bookId===bookId).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+ if(active?.id!==bookId||p.hidden||p.dataset.kind!=='toc')return;
+ p.innerHTML='<div class="setting-title">目录与书签</div><div class="toc-section"><h3>章节目录</h3><div id="toc-entries" class="toc-entries">'+(entries.length?entries.map((item,i)=>'<button class="toc-item" style="padding-left:'+(4+item.depth*16)+'px" data-toc-index="'+i+'">'+esc(item.label)+'</button>').join(''):'此书没有目录')+'</div></div><div class="toc-section"><h3>书签</h3><button class="btn ghost small" id="toc-save-bookmark">＋ 添加当前位置书签</button><div class="toc-entries">'+(marks.length?marks.map((m,i)=>'<button class="toc-item" data-bookmark-index="'+i+'">书签 '+(marks.length-i)+' · '+esc(new Date(m.createdAt).toLocaleDateString('zh-CN'))+'</button>').join(''):'暂无书签')+'</div></div>';
+ p.querySelectorAll('[data-toc-index]').forEach(el=>el.onclick=async()=>{try{await rendition.display(entries[Number(el.dataset.tocIndex)].href);closeReaderPanels();toggleReaderChrome(false)}catch(e){console.error(e);toast('章节跳转失败')}});
+ p.querySelectorAll('[data-bookmark-index]').forEach(el=>el.onclick=async()=>{try{await rendition.display(marks[Number(el.dataset.bookmarkIndex)].cfi);closeReaderPanels();toggleReaderChrome(false)}catch(e){toast('书签位置已失效')}});
+ $('#toc-save-bookmark').onclick=async()=>{const cfi=rendition?.currentLocation()?.start?.cfi;if(!cfi)return toast('当前阅读位置还未准备好');await put('bookmarks',{id:id(),bookId,cfi,createdAt:now()});toast('已添加书签');closeReaderPanels();showToc()};
+}
 function postMobiNoteChange(type,note){
  if(active?.format!=='mobi')return;
  $('#document-body iframe')?.contentWindow?.postMessage({type,note:note?{id:note.id,cfi:note.cfi||null,text:note.text||'',note:note.note||''}:null},location.origin);
