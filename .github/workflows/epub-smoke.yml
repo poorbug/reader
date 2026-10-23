@@ -6,6 +6,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout pinned foliate-js
+        uses: actions/checkout@v4
+        with:
+          repository: johnfactotum/foliate-js
+          ref: 78914aef4466eb960965702401634c2cb348e9b1
+          path: vendor/foliate-js
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -19,3 +26,7 @@ jobs:
         run: node tests/epub-tap.cjs
       - name: Verify WebKit EPUB tap
         run: BROWSER=webkit node tests/epub-tap.cjs
+      - name: Verify Chromium foliate EPUB compatibility
+        run: node tests/foliate-epub.cjs
+      - name: Verify WebKit foliate EPUB compatibility
+        run: BROWSER=webkit node tests/foliate-epub.cjs
