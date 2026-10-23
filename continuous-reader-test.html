@@ -11,7 +11,7 @@
 #load-url{border:0;border-radius:7px;padding:8px 10px;background:#397361;color:white;font-size:13px}
 #status{flex-basis:100%;font-size:12px;color:#64746c;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
 #surface{position:relative;flex:1;min-height:0}
-#scroll{height:100%;overflow:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#scroll{position:relative;height:100%;overflow:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 #scroll::-webkit-scrollbar{display:none}
 .chapter{position:relative;min-height:1px;overflow:hidden;background:var(--page-bg,#f5f0e7)}
 .chapter iframe{width:100%;display:block;border:0;overflow:hidden;background:transparent;touch-action:pan-y}
@@ -62,7 +62,7 @@ function measure(item){
  const doc=item.frame.contentDocument;
  const html=doc.documentElement,body=doc.body;
  if(!html||!body)return;
- const newHeight=Math.max(20,Math.ceil(Math.max(html.scrollHeight,body.scrollHeight,body.getBoundingClientRect().height))+2);
+ const newHeight=Math.max(20,Math.ceil(Math.max(body.scrollHeight,body.getBoundingClientRect().height))+2);
  const oldHeight=item.height;
  if(Math.abs(newHeight-oldHeight)<2)return;
  const scroller=$('#scroll');
@@ -152,7 +152,7 @@ async function mount(item,gen){
   const iframe=document.createElement('iframe');iframe.setAttribute('sandbox','allow-same-origin allow-scripts');
   iframe.setAttribute('scrolling','no');iframe.title='第 '+(item.index+1)+' 章';
   iframe.style.cssText='display:block;width:100%;height:'+item.height+'px;border:0;overflow:hidden;background:transparent';
-  item.frame=iframe;item.el.classList.remove('placeholder');item.el.replaceChildren(iframe);
+  item.frame=iframe;item.el.classList.remove('placeholder');item.el.style.minHeight='0';item.el.replaceChildren(iframe);
   await new Promise((resolve,reject)=>{
    iframe.onload=resolve;iframe.onerror=()=>reject(new Error('iframe 加载失败'));
    iframe.src=src;
@@ -168,8 +168,9 @@ async function mount(item,gen){
   requestAnimationFrame(()=>{measure(item);createUnderlines(item)});
   for(const image of doc.images||[]){if(!image.complete)image.addEventListener('load',()=>{measure(item);createUnderlines(item)},{once:true})}
   if(item.onReady){for(const fn of item.onReady.splice(0))fn()}
+  if(Math.abs(item.index-current)>Math.max(BEFORE,AFTER))release(item);
  }catch(error){
-  item.state='failed';item.el.textContent='章节 '+(item.index+1)+' 加载失败：'+error.message;
+  item.state='failed';if(item.onReady)for(const fn of item.onReady.splice(0))fn();item.el.textContent='章节 '+(item.index+1)+' 加载失败：'+error.message;
   item.el.style.padding='20px';logger(error.message);
  }
 }
@@ -256,7 +257,7 @@ async function openFile(file){
  const gen=++generation;$('#status').textContent='正在解析 '+file.name+' …';
  clearSelection();hidePanels();
  const old=book;for(const it of items){it.observer?.disconnect();try{old?.sections?.[it.index]?.unload?.()}catch{}}
- old?.destroy?.();book=null;items=[];$('#scroll').replaceChildren();$('#progress').hidden=true;
+ old?.destroy?.();book=null;items=[];$('#scroll').replaceChildren();$('#scroll').scrollTop=0;$('#progress').hidden=true;
  try{
   if(file.size>MAX_SIZE)throw Error('测试页限制 30MB');
   const [hash,bytes]=await hashFile(file);if(gen!==generation)return;
@@ -278,6 +279,7 @@ async function openFile(file){
   current=Number.isInteger(saved?.index)?Math.max(0,Math.min(items.length-1,saved.index)):0;
   loadNearby();
   const item=items[current];if(item.state!=='ready')await new Promise(resolve=>{item.onReady.push(resolve);mount(item,gen)});
+  if(item.state!=='ready')throw Error('无法加载初始章节');
   root.scrollTop=item.el.offsetTop+(saved?.fraction||0)*Math.max(0,item.height-root.clientHeight);
   restoring=false;updateActive();
   $('#status').textContent=(book.metadata?.title||file.name)+' · '+book.sections.length+' 章 · 多章节连续滚动';
