@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.45';
+const APP_VERSION='1.0.46';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='reading',view='shelf',notesGroupBookId=null,active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
@@ -436,16 +436,17 @@ async function showHighlights(){
 function readerShell(title,content){return '<section class="reader immersive-reader" id="reader"><div class="reader-body reader-full">'+content+'</div><header class="reader-top reading-chrome" id="reader-top"><button class="icon-btn" id="reader-back" aria-label="返回"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span class="title">'+esc(title)+'</span><span style="width:38px"></span></header><footer class="reading-chrome reader-toolbar" id="reader-toolbar"><button id="reader-toc" aria-label="目录">☰<small>目录</small></button><button id="reader-notes" aria-label="查看本书划线和笔记">✎<small>笔记</small></button><button disabled aria-label="进度稍后开放">◉<small>进度</small></button><button id="reader-colors" aria-label="颜色和亮度">☼<small>颜色</small></button><button id="reader-fonts" aria-label="字体和排版">A<small>字体</small></button></footer><div class="reading-dimmer" id="reading-dimmer"></div><div class="reading-settings" id="reading-settings" hidden></div></section>'}
 function closeReaderPanels(){const p=$('#reading-settings');if(p){p.hidden=true;p.dataset.kind=''}for(const k of ['toc','notes','colors','fonts'])$('#reader-'+k)?.classList.remove('selected')}
 function openReaderPanel(kind){const p=$('#reading-settings');if(!p)return;p.hidden=false;p.dataset.kind=kind;for(const k of ['toc','notes','colors','fonts'])$('#reader-'+k)?.classList.toggle('selected',k===kind)}
-const epubDiagnostics={enabled:false,events:[],chapterCount:0};
+const epubDiagnostics={enabled:false,events:[],chapterCount:0,counts:{}};
 function epubTrace(message){
  if(!epubDiagnostics.enabled)return;
- epubDiagnostics.events.push(message);if(epubDiagnostics.events.length>7)epubDiagnostics.events.shift();
+ epubDiagnostics.counts[message]=(epubDiagnostics.counts[message]||0)+1;
+ epubDiagnostics.events.push(message);if(epubDiagnostics.events.length>5)epubDiagnostics.events.shift();
  const el=document.querySelector('#epub-diagnostics');
- if(el)el.textContent='EPUB 调试 · 章节 '+epubDiagnostics.chapterCount+'\n'+epubDiagnostics.events.join('\n');
+ if(el)el.textContent='EPUB 调试 · 章节 '+epubDiagnostics.chapterCount+'\n事件累计: '+Object.entries(epubDiagnostics.counts).filter(([k])=>/touch|click|短按|工具栏|pointer/.test(k)).map(([k,v])=>k+'='+v).join('  ')+'\n最近: '+epubDiagnostics.events.join(' → ');
 }
 function initEpubDiagnostics(){
  epubDiagnostics.enabled=active?.format==='epub'&&new URLSearchParams(location.search).get('debug')==='epub';
- epubDiagnostics.events=[];epubDiagnostics.chapterCount=0;
+ epubDiagnostics.events=[];epubDiagnostics.counts={};epubDiagnostics.chapterCount=0;
  if(!epubDiagnostics.enabled)return;
  const el=document.createElement('pre');el.id='epub-diagnostics';
  el.style.cssText='position:fixed;top:85px;left:8px;right:8px;z-index:9999;max-height:180px;overflow:auto;padding:8px;background:#122920ea;color:#e2ffdc;font:11px/1.5 monospace;white-space:pre-wrap;pointer-events:none;border-radius:8px';
