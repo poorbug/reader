@@ -218,3 +218,15 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 #book-action-menu button{flex:1;border:0;border-radius:7px;background:transparent;color:#fff;padding:9px 4px;font-size:14px;white-space:nowrap}
 #book-action-menu button:active,#book-action-menu button[aria-current="true"]{background:#ffffff25}
 #book-action-menu button[data-book-action="delete"]{color:#ffbcb2}
+
+/* v1.0.40 — compact shelf header, more room for book covers */
+.app:has(.tabs) {padding-top:18px}
+.app.with-install-strip:has(.tabs){padding-top:calc(72px + env(safe-area-inset-top,0px))}
+.app:has(.tabs) .top{align-items:center;gap:12px}
+.app:has(.tabs) .eyebrow{font-size:9px;letter-spacing:2px}
+.app:has(.tabs) .top h1{font-size:25px;line-height:1.15;margin:3px 0 3px}
+.app:has(.tabs) .shelf-subtitle{font-size:11px;line-height:1.4;color:#89968c;margin:0}
+.app:has(.tabs) #add{padding:9px 13px;font-size:13px;flex-shrink:0}
+.app:has(.tabs) .tabs{gap:7px;margin:13px 0 16px;padding:0 0 2px}
+.app:has(.tabs) .tab{font-size:12px;line-height:1.2;padding:7px 13px;min-height:32px}
+@media(max-width:380px){.app:has(.tabs) .top h1{font-size:23px}.app:has(.tabs) .shelf-subtitle{font-size:10px}}
