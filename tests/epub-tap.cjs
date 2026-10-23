@@ -1,4 +1,4 @@
-const { chromium, devices } = require('playwright');
+const { chromium, webkit, devices } = require('playwright');
 const JSZip = require('jszip');
 const assert = require('node:assert/strict');
 
@@ -12,7 +12,8 @@ async function fixture(){
  return z.generateAsync({type:'nodebuffer',compression:'DEFLATE'});
 }
 (async()=>{
- const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+ const engine=process.env.BROWSER==='webkit'?webkit:chromium;
+ const browser=await engine.launch({headless:true,...(engine===chromium?{args:['--no-sandbox']}:{})});
  const context=await browser.newContext({...devices['iPhone 13'],browserName:undefined});
  const page=await context.newPage(); const errors=[];
  page.on('pageerror',e=>errors.push(e.message));
@@ -32,6 +33,6 @@ async function fixture(){
  await chapter.locator('#tap-target').tap();await page.waitForTimeout(500);
  assert.equal(await page.locator('#reader').evaluate(el=>el.classList.contains('chrome-visible')),false,'second tap should hide chrome');
  if(errors.length)console.log('Browser errors:',errors.join('\n'));
- console.log('PASS: EPUB tap shows and hides top and bottom bars');
+ console.log('PASS: '+(process.env.BROWSER||'chromium')+' EPUB tap shows and hides top and bottom bars');
  await browser.close();
 })().catch(e=>{console.error(e);process.exitCode=1});
