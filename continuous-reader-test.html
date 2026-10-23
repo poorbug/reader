@@ -67,7 +67,7 @@ function measure(item){
  if(Math.abs(newHeight-oldHeight)<2)return;
  const scroller=$('#scroll');
  const before=item.el.getBoundingClientRect().bottom<scroller.getBoundingClientRect().top+4;
- item.height=newHeight;item.frame.style.height=newHeight+'px';
+ item.height=newHeight;item.frame.style.height=newHeight+'px';item.el.style.minHeight='0';
  if(before&&!restoring)scroller.scrollTop+=newHeight-oldHeight;
 }
 function applyStyles(doc){
@@ -152,7 +152,7 @@ async function mount(item,gen){
   const iframe=document.createElement('iframe');iframe.setAttribute('sandbox','allow-same-origin allow-scripts');
   iframe.setAttribute('scrolling','no');iframe.title='第 '+(item.index+1)+' 章';
   iframe.style.cssText='display:block;width:100%;height:'+item.height+'px;border:0;overflow:hidden;background:transparent';
-  item.frame=iframe;item.el.classList.remove('placeholder');item.el.style.minHeight='0';item.el.replaceChildren(iframe);
+  item.frame=iframe;item.el.classList.remove('placeholder');item.el.replaceChildren(iframe);
   await new Promise((resolve,reject)=>{
    iframe.onload=resolve;iframe.onerror=()=>reject(new Error('iframe 加载失败'));
    iframe.src=src;
@@ -197,7 +197,7 @@ function updateActive(){
  loadNearby();
 }
 function loadNearby(){
- if(!items.length)return;
+ if(!items.length||!book)return;
  const gen=generation,first=Math.max(0,current-BEFORE),last=Math.min(items.length-1,current+AFTER);
  for(let i=first;i<=last;i++)mount(items[i],gen);
  for(let i=0;i<items.length;i++){
