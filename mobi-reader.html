@@ -242,6 +242,7 @@ window.addEventListener('message',async e=>{
   await view.open(new File([e.data.buffer],e.data.name,{type:format==='epub'?'application/epub+zip':'application/x-mobipocket-ebook'}));
   if(!view.renderer)throw Error('阅读引擎未初始化');
   wireReaderSurface(view);
+  wireReaderSurface(document.getElementById('holder'));
   view.renderer.setAttribute('flow','scrolled');
   view.renderer.setAttribute('margin','0px');
   view.renderer.setAttribute('gap','4%');
