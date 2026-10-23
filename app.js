@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.46';
+const APP_VERSION='1.0.47';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='reading',view='shelf',notesGroupBookId=null,active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
@@ -201,7 +201,39 @@ const palette={paper:['#f6f0e5','#333b34'],white:['#fff','#252525'],green:['#e6e
 async function openReader(k,target){const b=books.find(x=>x.id===k),f=await get('files',k);if(!b||!f)return toast('电子书文件不存在');if((b.format||'epub')!=='epub')return openDocumentReader(b,f,target);if(typeof ePub==='undefined'){toast('EPUB 阅读引擎未就绪，请联网刷新后重试');return}active=b;app.innerHTML=readerShell(b.title,'<div id="viewer" style="width:100%;height:100%"></div>');setupReaderChrome(closeReader,'epub');initEpubDiagnostics();probeEpubEvents();try{epub=ePub(await f.blob.arrayBuffer());await epub.ready;toc=(await epub.loaded.navigation).toc||[];rendition=epub.renderTo('viewer',{width:'100%',height:'100%',flow:'scrolled',manager:'continuous',spread:'none',allowScriptedContent:false});applyTheme();// One tap bridge; delayed synthetic clicks must not toggle the toolbar twice.
 let lastEpubToggleAt=0;
 const epubTapToggle=()=>{if(active?.id!==b.id||Date.now()-lastEpubToggleAt<1000||selection?.text)return;lastEpubToggleAt=Date.now();scheduleReaderTap()};
-rendition.on('relocated',async loc=>{if(!active)return;let percent=0;try{if(epub.locations.length())percent=epub.locations.percentageFromCfi(loc.start.cfi)||0}catch{}active.percent=percent;active.lastRead=now();await put('progress',{bookId:active.id,cfi:loc.start.cfi,percent,updatedAt:now()});await put('books',active)});rendition.hooks.content.register(contents=>{epubDiagnostics.chapterCount++;epubTrace('章节钩子触发');try{contents.document.documentElement.style.touchAction='pan-y';contents.document.body.style.touchAction='pan-y';contents.document.documentElement.style.webkitTouchCallout='none';contents.document.body.style.webkitTouchCallout='none';contents.document.body.style.webkitUserSelect='none';normalizeEpubHeading(contents.document);const ctrl=window.ZhijianSelection?.install(contents.document,{onChange:result=>{if(!active||active.format==='mobi')return;if(!result){if(selectionController===ctrl){selection=null;$('.selected-action')?.remove()}return}selectionController=ctrl;let cfi=null;try{cfi=contents.cfiFromRange(result.range)}catch(e){console.warn('CFI conversion failed',e)}selection={text:result.text,cfi,kind:'epub'};toggleReaderChrome(false);selectionMenu()}});contents.document.addEventListener('contextmenu',e=>e.preventDefault(),{capture:true});contents.document.addEventListener('scroll',()=>toggleReaderChrome(false),{passive:true});contents.document.addEventListener('touchmove',()=>toggleReaderChrome(false),{passive:true});const chapterDoc=contents.document;epubTrace('正文事件监听已注册');if(epubDiagnostics.enabled){for(const type of ['touchstart','touchend','pointerdown','pointerup','click'])contents.window?.addEventListener(type,()=>epubTrace('章节window '+type),{capture:true,passive:true})}
+rendition.on('relocated',async loc=>{if(!active)return;let percent=0;try{if(epub.locations.length())percent=epub.locations.percentageFromCfi(loc.start.cfi)||0}catch{}active.percent=percent;active.lastRead=now();await put('progress',{bookId:active.id,cfi:loc.start.cfi,percent,updatedAt:now()});await put('books',active)});// Bind to the iframe currently mounted by epub.js, not only its content hook.
+rendition.on('rendered',(_section,view)=>{
+ try{
+  const frame=view?.iframe||view?.element?.querySelector?.('iframe');
+  const doc=frame?.contentDocument||view?.document;
+  if(!doc||doc.__zhijianFrameTapInstalled)return;
+  doc.__zhijianFrameTapInstalled=true;
+  epubTrace('实际章节 iframe 已绑定: '+(frame?'yes':'view'));
+  let start=null,lastTouch=0;
+  const skip=e=>e.target?.closest?.('a,button,input,textarea,select,[data-zhj-handle]');
+  doc.addEventListener('touchstart',e=>{
+   epubTrace('iframe touchstart');
+   if(e.touches.length!==1){start=null;return}
+   const t=e.touches[0];start={x:t.clientX,y:t.clientY,at:Date.now(),moved:false};
+  },{capture:true,passive:true});
+  doc.addEventListener('touchmove',e=>{
+   if(start&&e.touches.length===1){const t=e.touches[0];if(Math.hypot(t.clientX-start.x,t.clientY-start.y)>12)start.moved=true}
+  },{capture:true,passive:true});
+  doc.addEventListener('touchend',e=>{
+   epubTrace('iframe touchend');
+   const p=start;start=null;if(!p||!e.changedTouches.length)return;
+   const t=e.changedTouches[0];
+   if(p.moved||Date.now()-p.at>360||Math.hypot(t.clientX-p.x,t.clientY-p.y)>12||skip(e)||doc.__zhijianSelecting||doc.__zhijianSelectionActive)return;
+   lastTouch=Date.now();epubTrace('iframe 点击命中');epubTapToggle();
+  },{capture:true,passive:true});
+  doc.addEventListener('click',e=>{
+   epubTrace('iframe click');
+   if(Date.now()-lastTouch<1100||skip(e)||doc.__zhijianSelectionActive)return;
+   epubTapToggle();
+  },{capture:true});
+ }catch(error){epubTrace('实际 iframe 绑定失败: '+error.message);console.warn(error)}
+});
+rendition.hooks.content.register(contents=>{epubDiagnostics.chapterCount++;epubTrace('章节钩子触发');try{contents.document.documentElement.style.touchAction='pan-y';contents.document.body.style.touchAction='pan-y';contents.document.documentElement.style.webkitTouchCallout='none';contents.document.body.style.webkitTouchCallout='none';contents.document.body.style.webkitUserSelect='none';normalizeEpubHeading(contents.document);const ctrl=window.ZhijianSelection?.install(contents.document,{onChange:result=>{if(!active||active.format==='mobi')return;if(!result){if(selectionController===ctrl){selection=null;$('.selected-action')?.remove()}return}selectionController=ctrl;let cfi=null;try{cfi=contents.cfiFromRange(result.range)}catch(e){console.warn('CFI conversion failed',e)}selection={text:result.text,cfi,kind:'epub'};toggleReaderChrome(false);selectionMenu()}});contents.document.addEventListener('contextmenu',e=>e.preventDefault(),{capture:true});contents.document.addEventListener('scroll',()=>toggleReaderChrome(false),{passive:true});contents.document.addEventListener('touchmove',()=>toggleReaderChrome(false),{passive:true});const chapterDoc=contents.document;epubTrace('正文事件监听已注册');if(epubDiagnostics.enabled){for(const type of ['touchstart','touchend','pointerdown','pointerup','click'])contents.window?.addEventListener(type,()=>epubTrace('章节window '+type),{capture:true,passive:true})}
 let tapStart=null,lastTouchAt=0;
 const interactive=target=>!!target?.closest?.('a,button,input,textarea,select,[data-zhj-handle],svg');
 chapterDoc.addEventListener('touchstart',event=>{
