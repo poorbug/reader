@@ -1,4 +1,5 @@
 name: Deploy Reader to GitHub Pages
+# Redeploy current reader release v1.0.39 after clearing queued runs.
 on:
   push:
     branches: [main]
