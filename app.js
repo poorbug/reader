@@ -384,7 +384,7 @@ async function syncNoteMark(note){
 }
 async function removeNoteMark(note){
  if(!active||active.id!==note.bookId)return;
- if((active.format||'epub')==='epub'&&rendition&&note.cfi){
+ if((active.format||'epub')==='epub'&&rendition&&note.cfi&&false){
   try{rendition.annotations.remove(note.cfi,'underline');rendition.annotations.remove(note.cfi,'highlight')}catch(e){console.warn(e)}
  }else if(['mobi','epub'].includes(active.format))postMobiNoteChange('MOBI_NOTE_REMOVE',note);
 }
@@ -460,7 +460,7 @@ async function saveHighlight(withNote){
  let note='';
  if(withNote){let value=prompt('写下你对这段文字的想法：','');if(value===null)return;note=value}
  if(['mobi','epub'].includes(data.kind)){
-  const highlight={id:id(),bookId,text:data.text,note,cfi:data.cfi||null,source:'mobi-selection',createdAt:now()};
+  const highlight={id:id(),bookId,text:data.text,note,cfi:data.cfi||null,source:data.kind+'-selection',createdAt:now()};
   await put('highlights',highlight);
   postMobiNoteChange('MOBI_NOTE_UPSERT',highlight);
   toast('已保存'+(withNote?'笔记':'摘录')+(highlight.cfi?'':'（暂未获取原文位置）'));
@@ -574,7 +574,7 @@ window.addEventListener('message',async e=>{
 });
 
 let documentUrl=null;
-window.addEventListener('message',async e=>{if(e.origin!==location.origin||!active||!['mobi','epub'].includes(active.format))return;const d=e.data;if(d?.type==='MOBI_PREFS'){settings={...settings,...d.prefs};saveSettings();return}if(d?.type==='MOBI_PROGRESS'&&d.bookId===active.id){const old=await get('progress',active.id)||{};const record={...old,bookId:active.id,cfi:d.cfi||old.cfi||null,sectionIndex:d.sectionIndex??old.sectionIndex??0,percent:typeof d.percent==='number'?d.percent:(old.percent||0),updatedAt:now()};await put('progress',record);active.percent=record.percent;active.lastRead=now();await put('books',active)}});
+window.addEventListener('message',async e=>{if(e.origin!==location.origin||!active||!['mobi','epub'].includes(active.format))return;const d=e.data;if(d?.type==='MOBI_PREFS'){settings={...settings,...d.prefs};saveSettings();return}if(d?.type==='MOBI_PROGRESS'&&d.bookId===active.id){const old=await get('progress',active.id)||{};const record={...old,bookId:active.id,engine:'foliate',cfi:d.cfi||old.cfi||null,sectionIndex:d.sectionIndex??old.sectionIndex??0,percent:typeof d.percent==='number'?d.percent:(old.percent||0),updatedAt:now()};await put('progress',record);active.percent=record.percent;active.lastRead=now();await put('books',active)}});
 
 async function openDocumentReader(b,f,target){
   active=b;let format=b.format||'epub';
@@ -585,7 +585,7 @@ async function openDocumentReader(b,f,target){
     frame.onload=async()=>{try{if(!active||active.id!==b.id)return;const data=await f.blob.arrayBuffer();frame.contentWindow.postMessage({type:'OPEN_PDF',buffer:data},location.origin,[data])}catch(err){toast('PDF 加载失败：'+err.message)}};
   }else{
     let frame=document.createElement('iframe');frame.src='./mobi-reader.html';frame.title=b.title;frame.style.cssText='width:100%;height:100%;border:0;background:#fff';$('#document-body').append(frame);
-    frame.onload=async()=>{if(!active||active.id!==b.id)return;let data=await f.blob.arrayBuffer();frame.contentWindow.postMessage({type:'OPEN_BOOK',format,bookId:b.id,cfi:format==='mobi'?(target||(await get('progress',b.id))?.cfi||null):null,sectionIndex:format==='mobi'?(await get('progress',b.id))?.sectionIndex??null:null,prefs:settings,notes:(await all('highlights')).filter(h=>h.bookId===b.id).map(h=>({id:h.id,cfi:h.cfi||null,text:h.text,note:h.note||''})),buffer:data,name:f.name||b.title+'.'+format},location.origin,[data])};
+    frame.onload=async()=>{if(!active||active.id!==b.id)return;let data=await f.blob.arrayBuffer();const progress=await get('progress',b.id);const saved=progress?.engine==='foliate'?progress:null;frame.contentWindow.postMessage({type:'OPEN_BOOK',format,bookId:b.id,cfi:target||saved?.cfi||null,sectionIndex:saved?.sectionIndex??null,prefs:settings,notes:(await all('highlights')).filter(h=>h.bookId===b.id).map(h=>({id:h.id,cfi:h.cfi||null,text:h.text,note:h.note||''})),buffer:data,name:f.name||b.title+'.'+format},location.origin,[data])};
   }
   b.lastRead=now();await put('books',b);
 }
