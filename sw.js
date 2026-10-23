@@ -35,6 +35,11 @@ self.addEventListener('message',event=>{
 self.addEventListener('fetch',event=>{
  if(event.request.method!=='GET')return;
  const url=new URL(event.request.url);
+ // Keep the experimental EPUB page network-first so changes show without stale PWA caches.
+ if(url.origin===self.location.origin&&url.pathname.endsWith('/epub-engine-test.html')){
+  event.respondWith(fetch(event.request,{cache:'no-store'}).catch(()=>caches.match(event.request)));
+  return;
+ }
  // The version check must always reach the published site, not our offline cache.
  if(url.origin===self.location.origin&&url.pathname.endsWith('/version.json')){
   event.respondWith(fetch(event.request,{cache:'no-store'}));
