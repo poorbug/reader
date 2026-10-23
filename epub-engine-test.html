@@ -12,29 +12,47 @@ foliate-view{display:block;width:100%;height:100%;touch-action:pan-y}
 #toolbar.visible{display:flex}
 #toc{display:none;position:absolute;inset:15% 7% 12%;z-index:21;background:#f6f0e5;overflow:auto;padding:14px;box-shadow:0 6px 24px #0005}
 #toc.visible{display:block}#toc button{display:block;width:100%;text-align:left;padding:10px;background:none;border:0;border-bottom:1px solid #ddd}
-button{cursor:pointer}#test-log{font-size:11px;padding:5px 10px;max-height:62px;overflow:auto;background:#e2ebe4;white-space:pre-wrap}
+button{cursor:pointer}#selection-actions{display:none;position:absolute;left:12px;right:12px;bottom:72px;z-index:22;justify-content:center;gap:12px;padding:12px;background:#294739;color:white;border-radius:12px}#selection-actions.visible{display:flex}#selection-actions button{border:0;background:transparent;color:white;font-size:14px}#test-log{font-size:11px;padding:5px 10px;max-height:62px;overflow:auto;background:#e2ebe4;white-space:pre-wrap}
 </style></head>
 <body><main><header><input id="file" type="file" accept=".epub,application/epub+zip"><input id="url" type="url" inputmode="url" placeholder="粘贴 EPUB HTTPS 文件地址"><button id="load-url" type="button">从地址打开</button><span id="status" role="status">请选择文件或输入 EPUB 下载地址</span></header>
-<div id="reader"><div id="holder" style="height:100%"></div><div id="toc"></div><nav id="toolbar"><button id="toc-btn">目录</button><button id="smaller">A−</button><button id="larger">A+</button><button id="close">收起</button></nav></div>
+<div id="reader"><div id="selection-actions"><button id="sel-copy">复制</button><button id="sel-quote">摘录</button><button id="sel-clear">取消</button></div><div id="holder" style="height:100%"></div><div id="toc"></div><nav id="toolbar"><button id="toc-btn">目录</button><button id="smaller">A−</button><button id="larger">A+</button><button id="close">收起</button></nav></div>
 <div id="test-log" aria-live="polite">尚未打开书籍</div></main>
-<script type="module">
+<script src="./selection.js"></script><script type="module">
 const $=s=>document.querySelector(s);
-let view,book,size=18,toc=[],tapCount=0;
+let view,book,size=18,toc=[],tapCount=0,changing=false,lastChange=0,selectedText='',selectionController=null;
 const log=msg=>{$('#test-log').textContent=msg+' | 点击次数 '+tapCount};
 const show=()=>{$('#toolbar').classList.toggle('visible');log('工具栏 '+($('#toolbar').classList.contains('visible')?'显示':'隐藏'))};
+async function switchSection(dir){
+ if(!view||changing||Date.now()-lastChange<650)return;
+ const r=view.renderer;if(!r?.scrolled)return;
+ changing=true;
+ try{if(dir>0)await view.next();else await view.prev();lastChange=Date.now();log(dir>0?'已尝试进入下一章':'已尝试进入上一章')}
+ catch(error){log('切换章节失败: '+error.message)}finally{changing=false}
+}
+function clearSelected(){selectionController?.clear();selectedText='';$('#selection-actions').classList.remove('visible')}
 function wire(doc){
  if(!doc||doc.__zhjTestBound)return;doc.__zhjTestBound=true;
+ doc.documentElement.style.touchAction='pan-y';doc.body.style.touchAction='pan-y';
+ const ctrl=window.ZhijianSelection?.install(doc,{onChange:detail=>{
+  selectedText=detail?.text||'';selectionController=ctrl;
+  $('#selection-actions').classList.toggle('visible',!!selectedText);
+  if(selectedText){$('#toolbar').classList.remove('visible');log('自定义选词成功: '+selectedText.slice(0,18))}
+ }});
+ let edge=false,edgeY=0;
  let p=null,lastTouch=0;
- doc.addEventListener('touchstart',e=>{const t=e.touches[0];p=t?{x:t.clientX,y:t.clientY,when:Date.now(),moved:false}:null},{capture:true,passive:true});
+ doc.addEventListener('touchstart',e=>{const t=e.touches[0];p=t?{x:t.clientX,y:t.clientY,when:Date.now(),moved:false}:null;edgeY=t?.clientY||0;const r=view?.renderer;edge=!!r?.scrolled&&(r.viewSize-r.end<15||r.start<15)},{capture:true,passive:true});
  doc.addEventListener('touchmove',e=>{const t=e.touches[0];if(t&&p&&Math.hypot(t.clientX-p.x,t.clientY-p.y)>12)p.moved=true},{capture:true,passive:true});
- doc.addEventListener('touchend',e=>{const t=e.changedTouches[0],v=p;p=null;if(!t||!v||v.moved||Date.now()-v.when>380||Math.hypot(t.clientX-v.x,t.clientY-v.y)>12||e.target.closest?.('a,button'))return;lastTouch=Date.now();tapCount++;show()},{capture:true,passive:true});
- doc.addEventListener('click',e=>{if(Date.now()-lastTouch<700||e.target.closest?.('a,button'))return;tapCount++;show()},{capture:true});
+ doc.addEventListener('touchend',e=>{const t=e.changedTouches[0],v=p;p=null;if(!t)return;
+ if(edge&&!doc.__zhijianSelecting&&!doc.__zhijianSelectionActive){const delta=edgeY-t.clientY,r=view?.renderer;if(delta>48&&r?.viewSize-r?.end<18)switchSection(1);else if(delta< -48&&r?.start<18)switchSection(-1)}
+ if(!v||v.moved||Date.now()-v.when>380||Math.hypot(t.clientX-v.x,t.clientY-v.y)>12||e.target.closest?.('a,button')||doc.__zhijianSelecting||doc.__zhijianSelectionActive)return;lastTouch=Date.now();tapCount++;show()},{capture:true,passive:true});
+ doc.addEventListener('click',e=>{if(Date.now()-lastTouch<700||e.target.closest?.('a,button')||doc.__zhijianSelecting||doc.__zhijianSelectionActive)return;tapCount++;show()},{capture:true});
+ doc.addEventListener('wheel',e=>{const r=view?.renderer;if(!r?.scrolled)return;if(e.deltaY>0&&r.viewSize-r.end<12)switchSection(1);else if(e.deltaY<0&&r.start<12)switchSection(-1)},{passive:true});
 }
 function setPrefs(){view?.renderer?.setStyles?.('html,body{font-size:'+size+'px!important;line-height:1.8!important;background:#f6f0e5!important;color:#33453b!important}')}
 const flatten=items=>(items||[]).flatMap(x=>[x,...flatten(x.subitems)]);
 async function openFile(file){
  if(!file)return;
- $('#status').textContent='正在解析 EPUB…';$('#holder').replaceChildren();$('#toc').classList.remove('visible');$('#toolbar').classList.remove('visible');
+ $('#status').textContent='正在解析 EPUB…';selectedText='';selectionController=null;$('#selection-actions').classList.remove('visible');$('#holder').replaceChildren();$('#toc').classList.remove('visible');$('#toolbar').classList.remove('visible');
  try{
   await import('./vendor/foliate-js/view.js');
   view=document.createElement('foliate-view');$('#holder').append(view);
@@ -74,6 +92,9 @@ $('#load-url').onclick=async()=>{
   await openFile(new File([blob],name.toLowerCase().endsWith('.epub')?name:name+'.epub',{type:'application/epub+zip'}));
  }catch(error){$('#status').textContent='地址导入失败：'+error.message;log('地址导入失败 '+error.message)}finally{button.disabled=false}
 };
+$('#sel-copy').onclick=async()=>{try{await navigator.clipboard.writeText(selectedText);log('已复制选中文字')}catch{log('复制失败')}clearSelected()};
+$('#sel-quote').onclick=()=>{log('摘录测试成功（仅测试页，不保存笔记）: '+selectedText.slice(0,24));clearSelected()};
+$('#sel-clear').onclick=clearSelected;
 $('#toc-btn').onclick=()=>$('#toc').classList.toggle('visible');
 $('#smaller').onclick=()=>{size=Math.max(14,size-2);setPrefs()};
 $('#larger').onclick=()=>{size=Math.min(32,size+2);setPrefs()};
