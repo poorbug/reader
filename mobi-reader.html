@@ -173,14 +173,15 @@ window.addEventListener('message',async e=>{
  if(e.data?.type==='MOBI_REQUEST_TOC'){const entries=[];const flatten=items=>{for(const item of items||[]){entries.push({label:item.label||'章节',href:item.href});flatten(item.subitems)}};flatten(view?.book?.toc||[]);window.__tocEntries=entries;parent.postMessage({type:'MOBI_TOC_ENTRIES',entries:entries.map(x=>({label:x.label}))},location.origin);return}
  if(e.data?.type==='MOBI_GOTO_TOC'){const entry=window.__tocEntries?.[e.data.index];if(entry)try{await view.goTo(entry.href)}catch(err){console.warn(err)}return}
  if(e.data?.type==='MOBI_SET_PREFS'){prefs={...prefs,...e.data.prefs};applyPrefs();return}
- if(e.data?.type!=='OPEN_MOBI')return;
+ if(!['OPEN_MOBI','OPEN_BOOK'].includes(e.data?.type))return;
+ const format=e.data.format==='epub'?'epub':'mobi';
  bookId=e.data.bookId;noteMap=new Map((e.data.notes||[]).filter(h=>h.id).map(h=>[h.id,h]));initialCFI=e.data.cfi||null;initialSection=e.data.sectionIndex??null;prefs={...prefs,...(e.data.prefs||{})};document.getElementById('size').value=prefs.size;document.getElementById('lineHeight').value=prefs.lineHeight;document.getElementById('theme').value=prefs.theme;
  try{
-  status.textContent='正在加载 MOBI 阅读引擎…';
+  status.textContent='正在加载 '+format.toUpperCase()+' 阅读引擎…';
   await import('./vendor/foliate-js/view.js');
   view=document.createElement('foliate-view');
   document.getElementById('holder').append(view);
-  await view.open(new File([e.data.buffer],e.data.name,{type:'application/x-mobipocket-ebook'}));
+  await view.open(new File([e.data.buffer],e.data.name,{type:format==='epub'?'application/epub+zip':'application/x-mobipocket-ebook'}));
   if(!view.renderer)throw Error('阅读引擎未初始化');
   view.renderer.setAttribute('flow','scrolled');
   view.renderer.setAttribute('margin','0px');
@@ -205,6 +206,6 @@ window.addEventListener('message',async e=>{
   // Chapter navigation is rendered by the parent unified reader panel.
   for(const x of view.renderer.getContents()){wireTouch(x.doc);locateLegacyMobiNotes(x.doc,x.index)}normalizeBookHeadings();fixLegacyMobiTitles();scheduleNoteDrawing();
   status.remove();
- }catch(err){console.error(err);status.textContent='MOBI 打开失败：'+err.message+'。请先联网打开「设置 → 检查更新」并刷新至最新版本；电子书仍保存在本机。'}
+ }catch(err){console.error(err);status.textContent=format.toUpperCase()+' 打开失败：'+err.message+'。请先联网打开「设置 → 检查更新」并刷新至最新版本；电子书仍保存在本机。'}
 });
 document.addEventListener('gesturestart', e=>e.preventDefault(),{passive:false});document.addEventListener('gesturechange',e=>e.preventDefault(),{passive:false});</script></body></html>
