@@ -38,6 +38,14 @@ const assert=require('node:assert/strict');
   await page.waitForFunction(()=>document.querySelector('.note-share-preview img')?.naturalWidth>0,{timeout:20000});
   assert.equal(await page.locator('.note-share-close').isVisible(),true,'Share preview should be open');
   assert.equal(await page.locator('[data-note-share="save"]').isEnabled(),true,'PNG download should become available');
+  const previewToActionsGap=await page.evaluate(()=>{
+    const preview=document.querySelector('.note-share-preview');
+    const actions=document.querySelector('.note-share-controls');
+    return actions.getBoundingClientRect().top-preview.getBoundingClientRect().bottom;
+  });
+  assert.ok(previewToActionsGap>=16,
+   'Share image and bottom action buttons need a visible gap (got '+previewToActionsGap+'px)');
+
   const sharedAddress=await page.evaluate(()=>window.__noteQRDestination);
   const encoded=new URL(sharedAddress);
   assert.equal(encoded.searchParams.get('import'),'https://cdn.example.com/books/%E8%AE%B7%E6%B2%B3%E5%BE%80%E4%BA%8B.mobi?download=1&source=reader','QR must import this particular book');
