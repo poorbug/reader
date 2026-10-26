@@ -46,3 +46,7 @@ jobs:
         run: node tests/note-share.cjs
       - name: Verify WebKit note share image
         run: BROWSER=webkit node tests/note-share.cjs
+      - name: Verify Chromium annotation tap priority
+        run: node tests/note-tap-priority.cjs
+      - name: Verify WebKit annotation tap priority
+        run: BROWSER=webkit node tests/note-tap-priority.cjs
