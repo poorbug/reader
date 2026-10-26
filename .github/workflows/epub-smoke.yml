@@ -54,3 +54,7 @@ jobs:
         run: node tests/book-share.cjs
       - name: Verify WebKit reading header book share
         run: BROWSER=webkit node tests/book-share.cjs
+      - name: Verify Chromium MOBI native chapter scrolling
+        run: node tests/mobi-continuous.cjs
+      - name: Verify WebKit MOBI native chapter scrolling
+        run: BROWSER=webkit node tests/mobi-continuous.cjs
