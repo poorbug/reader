@@ -294,3 +294,32 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .note-share-controls .btn:disabled{opacity:.5;cursor:wait}
 .book-note-actions{flex-wrap:wrap}
 @media(max-height:680px){.note-share-preview img{max-height:47dvh}.note-share-sheet{max-height:92dvh}.note-share-controls{margin-top:16px}}
+
+/* Reader header: book-level sharing, consistent with the back-button hit area. */
+.immersive-reader .reader-share-book{
+ display:flex;align-items:center;justify-content:center;
+ flex:0 0 44px;width:44px;min-height:44px;
+ padding:7px;color:inherit;touch-action:manipulation;
+}
+.immersive-reader .reader-share-book svg{display:block;flex:none;width:25px;height:25px}
+.immersive-reader .reader-top .title{flex:1;min-width:0;max-width:none}
+.book-share-overlay{
+ position:fixed;inset:0;z-index:501;
+ display:flex;align-items:center;justify-content:center;
+ padding:16px;background:#111a16a8;
+}
+.book-share-dialog{
+ width:min(100%,460px);max-height:90dvh;overflow-y:auto;
+ border-radius:18px;box-sizing:border-box;padding:20px;
+ background:#fffef8;color:#32453c;box-shadow:0 18px 46px #0004;
+}
+.book-share-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.book-share-head strong{font-size:18px}
+.book-share-close{font-size:27px;line-height:1;border:0;background:transparent;color:inherit;padding:5px 9px}
+.book-share-caption{font-size:15px;margin:8px 0 20px;overflow-wrap:anywhere}
+.book-share-dialog label{display:block;margin-bottom:8px;font-size:13px;font-weight:600}
+.book-share-dialog input{width:100%;box-sizing:border-box;font-size:14px;padding:12px;border:1px solid #c7d5cc;border-radius:9px;background:white;color:inherit}
+.book-share-tip{font-size:12px;line-height:1.6;color:#6c7c72;margin:12px 0 18px}
+.book-share-dialog .btn{width:100%;min-height:43px}
+.book-share-feedback{font-size:12px;line-height:1.6;color:#3e7561;margin:10px 0 0}
+.book-share-feedback:empty{display:none}
