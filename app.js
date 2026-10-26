@@ -121,25 +121,53 @@ async function checkForAppUpdates(){
 function showImportOptions(){
   document.querySelector('#import-dialog')?.remove();
   let overlay=document.createElement('div');overlay.id='import-dialog';overlay.className='import-overlay';
-  overlay.innerHTML='<div class="import-modal" role="dialog" aria-modal="true" aria-label="导入电子书"><div class="top"><h2>导入电子书</h2><button class="icon-btn" id="import-close" aria-label="关闭">×</button></div><button class="btn" id="import-local">从本地文件导入</button><div class="muted">或通过可直接下载 EPUB、PDF 或 MOBI 的 HTTPS 链接导入</div><label for="epub-url">电子书下载地址</label><input type="url" id="epub-url" placeholder="https://example.com/book.pdf" autocomplete="url" inputmode="url"><div class="muted">链接必须公开可访问并允许跨域读取（CORS）；普通书籍介绍页不能直接导入。</div><button class="btn" id="import-url">下载并导入</button> <button class="btn ghost" id="copy-share-link">复制分享链接</button><p id="import-status" class="muted" aria-live="polite"></p></div>';
+  overlay.innerHTML='<div class="import-modal" role="dialog" aria-modal="true" aria-label="导入电子书"><div class="top"><h2>导入电子书</h2><button class="icon-btn" id="import-close" aria-label="关闭">×</button></div><button class="btn" id="import-local">从本地文件导入</button><div class="muted">粘贴朋友发来的「纸间」分享链接，或直接输入 EPUB、MOBI、PDF 的 HTTPS 下载地址。</div><label for="epub-url">分享链接 / 电子书下载地址</label><input type="url" id="epub-url" placeholder="https://poorbug.github.io/reader/?import=..." autocomplete="url" inputmode="url"><button class="btn ghost" id="import-paste" type="button">从剪贴板粘贴链接</button><div class="muted">下载后的书会添加到现有书架，重复内容不会再次添加。下载地址需允许跨域读取（CORS）。</div><button class="btn" id="import-url">添加到我的书架</button> <button class="btn ghost" id="copy-share-link">复制分享链接</button><p id="import-status" class="muted" aria-live="polite"></p></div>';
   document.body.append(overlay);
   overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};
   overlay.querySelector('#import-close').onclick=()=>overlay.remove();
   overlay.querySelector('#import-local').onclick=()=>{overlay.remove();$('#picker').click()};
+  overlay.querySelector('#import-paste').onclick=async()=>{
+   const input=overlay.querySelector('#epub-url'),status=overlay.querySelector('#import-status');
+   try{
+    if(!navigator.clipboard?.readText)throw Error('当前浏览器不支持自动读取剪贴板');
+    const text=(await navigator.clipboard.readText()).trim();
+    if(!text)throw Error('剪贴板中没有链接');
+    input.value=text;
+    status.textContent='链接已粘贴，点击「添加到我的书架」即可导入。';
+   }catch(error){status.textContent='无法自动粘贴，请长按输入框选择「粘贴」。';}
+   input.focus();
+  };
   overlay.querySelector('#import-url').onclick=async()=>{let input=overlay.querySelector('#epub-url'),button=overlay.querySelector('#import-url'),status=overlay.querySelector('#import-status');button.disabled=true;status.textContent='正在下载…';try{const result=await importUrl(input.value.trim(),status);overlay.remove();toast(result?.state==='existing'?'书架已有《'+result.title+'》，不重复导入':'导入成功：'+(result?.title||'电子书'))}catch(e){status.textContent=e.message;button.disabled=false}};
   overlay.querySelector('#copy-share-link').onclick=async()=>{
    const input=overlay.querySelector('#epub-url'),status=overlay.querySelector('#import-status');
    try{
-    const file=new URL(input.value.trim());
-    if(file.protocol!=='https:'||file.username||file.password)throw Error('分享地址必须是公开可访问的 HTTPS 下载链接');
+    const file=new URL(resolveBookImportInput(input.value));
     const link=new URL('./',location.href);link.searchParams.set('import',file.href);
     await navigator.clipboard.writeText(link.href);
     status.textContent='分享链接已复制。收到链接的人打开后，电子书将自动加入书架（已有则跳过）。';
    }catch(error){status.textContent=error?.message||'复制失败，请检查剪贴板权限'}
   };
 }
+// Accept either a direct HTTPS ebook URL or a full Paper Reader share URL.
+// Only this application's own ?import= parameter is unwrapped; arbitrary pages
+// with a similarly named query are never treated as trusted share links.
+function resolveBookImportInput(value){
+ let link;try{link=new URL(String(value||'').trim())}catch{throw Error('请粘贴完整的纸间分享链接或 HTTPS 电子书下载地址')}
+ const root=new URL('./',location.href);
+ const isApp=link.origin===root.origin&&
+   (link.pathname===root.pathname||link.pathname===root.pathname+'index.html');
+ if(isApp){
+  if(!link.searchParams.has('import'))throw Error('这是纸间首页链接，没有包含要导入的电子书');
+  const download=link.searchParams.get('import');
+  if(!download)throw Error('分享链接缺少电子书下载地址');
+  try{link=new URL(download)}catch{throw Error('分享链接中的电子书地址无效')}
+ }
+ if(link.protocol!=='https:')throw Error('目前仅支持 HTTPS 电子书地址，HTTP 链接无法在安全页面中下载');
+ if(link.username||link.password)throw Error('下载链接不能包含用户名或密码');
+ return link.href;
+}
 async function importUrl(value,status){
-  let url;try{url=new URL(value)}catch{throw Error('请输入完整的 HTTPS 下载地址')}
+  let url=new URL(resolveBookImportInput(value));
   if(url.protocol!=='https:')throw Error('仅支持 HTTPS 链接');
   if(url.username||url.password)throw Error('链接中不能包含账号或密码');
   // GitHub's /blob/ URL serves an HTML viewer. Convert it to a download URL.
