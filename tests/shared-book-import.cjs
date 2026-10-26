@@ -58,6 +58,7 @@ async function dbRead(page,store){
   await page.goto(share(source),{waitUntil:'domcontentloaded'});
   await page.getByText('已加入书架，原有书籍和笔记都已保留。',{exact:false}).waitFor({timeout:30000});
   assert.equal((await dbRead(page,'books')).length,2,'shared book must append to existing shelf');
+  assert.equal((await dbRead(page,'books')).find(book=>book.title==='分享新书')?.sourceUrl,source,'HTTPS source must be recorded for note QR');
   assert.equal((await dbRead(page,'progress'))[0]?.percent,0.43,'existing reading progress must remain');
   assert.equal((await dbRead(page,'highlights'))[0]?.text,'此前保留的划线','existing notes must remain');
   assert.equal(new URL(page.url()).searchParams.has('import'),false,'successful import should clear query');
@@ -67,6 +68,7 @@ async function dbRead(page,store){
   await page.goto(share(sameContentDifferentURL),{waitUntil:'domcontentloaded'});
   await page.getByText('没有重复添加。',{exact:false}).waitFor({timeout:30000});
   assert.equal((await dbRead(page,'books')).length,2,'identical file from another URL must deduplicate by SHA-256');
+  assert.equal((await dbRead(page,'books')).find(book=>book.title==='分享新书')?.sourceUrl,sameContentDifferentURL,'Re-import from another URL must refresh source without duplicating');
   // An already installed/returning user's Paste Share Link flow must use
   // the SAME IndexedDB shelf, and recognize both the shared app URL and the
   // raw HTTPS ebook download URL.
