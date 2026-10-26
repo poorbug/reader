@@ -37,6 +37,27 @@ async function makeFixture(){
   const after=await page.locator('#scroll').evaluate(root=>({position:root.scrollTop,second:root.querySelector('[data-index="1"]').offsetTop,thirdMounted:!!root.querySelector('[data-index="3"] iframe')}));
   assert.ok(after.position>=after.second,'native scroll position must reach next chapter without a second gesture');
   assert.ok(after.thirdMounted,'nearby chapters must load automatically');
+  // Regression: when an earlier chapter finishes loading/reflows, the currently
+  // visible paragraph in the next chapter must stay at the same screen position.
+  const initial=await page.locator('#scroll').evaluate(root=>{
+   const chapter=root.querySelector('[data-index="1"]');
+   return {relativeTop:chapter.getBoundingClientRect().top-root.getBoundingClientRect().top,
+    previousHeight:root.querySelector('[data-index="0"]').getBoundingClientRect().height};
+  });
+  await page.locator('#scroll').evaluate(root=>{
+   const doc=root.querySelector('[data-index="0"] iframe').contentDocument;
+   const imageLike=doc.createElement('div');imageLike.style.cssText='height:480px;width:100%';
+   doc.body.append(imageLike);
+  });
+  await page.waitForFunction(oldHeight=>
+   document.querySelector('[data-index="0"]').getBoundingClientRect().height>oldHeight+350,
+   initial.previousHeight,{timeout:12000});
+  const stabilized=await page.locator('#scroll').evaluate(root=>{
+   const chapter=root.querySelector('[data-index="1"]');
+   return chapter.getBoundingClientRect().top-root.getBoundingClientRect().top;
+  });
+  assert.ok(Math.abs(stabilized-initial.relativeTop)<5,
+   'late reflow in a previous chapter must not move the visible text (before='+initial.relativeTop+', after='+stabilized+')');
   if(errors.length)throw Error(errors.join('; '));
   console.log('PASS '+(process.env.BROWSER||'chromium')+' continuous EPUB: adjacent frames, native crossing, windowed preloading');
  }finally{await browser.close()}
