@@ -1,5 +1,5 @@
-const NAME='zhijian-reader-v66';
-const VERSION='1.0.66';
+const NAME='zhijian-reader-v67';
+const VERSION='1.0.67';
 const CORE=['./','./index.html','./style.css','./app.js','./icon.svg','./manifest.webmanifest','./mobi-reader.html','./continuous-reader.html','./pdf-reader.html','./selection.js','./vendor/qrcode.min.js','./note-share.js','./version.json'];
 // Essential foliate modules are deployed on this same origin, so MOBI can open offline.
 const MOBI_MODULES=[
