@@ -6,12 +6,24 @@
   const PALETTE={bg:'#1c1e23',ink:'#dfd1ab',soft:'#c6b991',muted:'#54544d',line:'#51504b',qr:'#f0e2bd'};
   const serif='"STKaiti","KaiTi","Songti SC","STSong","Noto Serif CJK SC",serif';
   function safeText(value){return String(value??'').trim().slice(0,MAX_CHARS)}
+  function bookShareAddress(book){
+    // The QR MUST point to a shareable book import URL, never just the home page.
+    // Locally imported books have no fetchable URL and therefore no QR.
+    if(!book?.sourceUrl)return null;
+    try{
+      const source=new URL(book.sourceUrl);
+      if(source.protocol!=='https:'||source.username||source.password)return null;
+      const site=new URL('./',location.href);
+      site.searchParams.set('import',source.href);
+      return site.href;
+    }catch{return null}
+  }
   function cardData(note,book){
     const title=safeText(book?.title)||'未命名书籍';
     const author=safeText(book?.author||book?.creator);
     const chapter=safeText(note?.chapterLabel||note?.chapter);
     return {note:safeText(note?.note),quote:safeText(note?.text)||'（暂无书摘内容）',
-      title,author,chapter,qr:'https://poorbug.github.io/reader/'};
+      title,author,chapter,qr:bookShareAddress(book)};
   }
   function textLines(ctx,text,maxWidth){
     const lines=[];
@@ -85,10 +97,13 @@
     ctx.strokeStyle=PALETTE.line;ctx.lineWidth=1;ctx.beginPath();
     ctx.moveTo(64,ruleY);ctx.lineTo(686,ruleY);ctx.stroke();
     ctx.fillStyle=PALETTE.ink;ctx.font='bold 28px '+serif;ctx.fillText('纸间',65,ruleY+86);
-    // QR points to 纸间 home; local notes are never embedded in the QR.
-    const qr=await makeQRCode(data.qr);
-    ctx.fillStyle=PALETTE.qr;ctx.fillRect(556,ruleY+32,130,130);
-    ctx.drawImage(qr,565,ruleY+41,112,112);
+    // QR points to 纸间/?import=<encoded HTTPS book source>.
+    // Do not draw a misleading home-page QR for local-only books.
+    if(data.qr){
+      const qr=await makeQRCode(data.qr);
+      ctx.fillStyle=PALETTE.qr;ctx.fillRect(524,ruleY+21,162,162);
+      ctx.drawImage(qr,532,ruleY+29,146,146);
+    }
     return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('无法导出 PNG 图片')),'image/png'));
   }
   function close(){
@@ -116,7 +131,8 @@
     layer.className='note-share-overlay';layer.setAttribute('role','presentation');
     layer.innerHTML='<div class="note-share-sheet" role="dialog" aria-modal="true" aria-label="分享笔记">'
       +'<div class="note-share-head"><strong>分享笔记</strong><button type="button" class="note-share-close" aria-label="关闭">×</button></div>'
-      +'<div class="note-share-preview"><p class="note-share-loading">正在分享笔记片…</p><img alt="纸间笔记分享图预览" hidden></div>'
+      +'<div class="note-share-preview"><p class="note-share-loading">正在生成分享图片…</p><img alt="纸间笔记分享图预览" hidden></div>'
+      +(data.qr?'':'<p class="note-share-source-missing">此书尚无公开 HTTPS 下载地址，分享图暂不包含二维码。</p>')
       +'<div class="note-share-controls"><button class="btn" type="button" data-note-share="save" disabled>保存图片</button>'
       +'<button class="btn ghost" type="button" data-note-share="system" disabled>分享图片</button></div>'
       +'</div>';
