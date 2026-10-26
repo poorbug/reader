@@ -114,10 +114,9 @@
     const data=cardData(note,book);
     const layer=document.createElement('div');
     layer.className='note-share-overlay';layer.setAttribute('role','presentation');
-    layer.innerHTML='<div class="note-share-sheet" role="dialog" aria-modal="true" aria-label="生成分享图">'
-      +'<div class="note-share-head"><strong>生成分享图</strong><button type="button" class="note-share-close" aria-label="关闭">×</button></div>'
-      +'<div class="note-share-preview"><p class="note-share-loading">正在生成分享图片…</p><img alt="纸间笔记分享图预览" hidden></div>'
-      +'<p class="note-share-hint">深色书摘卡 · 不包含用户信息 · 二维码指向纸间首页</p>'
+    layer.innerHTML='<div class="note-share-sheet" role="dialog" aria-modal="true" aria-label="分享笔记">'
+      +'<div class="note-share-head"><strong>分享笔记</strong><button type="button" class="note-share-close" aria-label="关闭">×</button></div>'
+      +'<div class="note-share-preview"><p class="note-share-loading">正在分享笔记片…</p><img alt="纸间笔记分享图预览" hidden></div>'
       +'<div class="note-share-controls"><button class="btn" type="button" data-note-share="save" disabled>保存图片</button>'
       +'<button class="btn ghost" type="button" data-note-share="system" disabled>分享图片</button></div>'
       +'</div>';
