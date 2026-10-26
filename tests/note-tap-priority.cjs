@@ -74,6 +74,13 @@ async function makeFixture(){
   });
   await page.touchscreen.tap(tap.x,tap.y);
   await page.locator('#inline-note-actions').waitFor({timeout:10000});
+  assert.equal(await page.locator('#inline-note-header').count(),0,'No heading text should be shown');
+  assert.equal(await page.locator('#inline-note-actions .inline-note-header strong').count(),0,'Remove this text highlight/notes heading');
+  const del=page.locator('#inline-note-actions [data-action="delete"]');
+  assert.equal(await del.getAttribute('aria-label'),'删除划线','Trash icon must have an accessible name');
+  assert.equal(await del.locator('svg').count(),1,'Delete must be an icon');
+  assert.equal((await del.innerText()).trim(),'','Delete should not show text label');
+
   await page.waitForTimeout(360);
   assert.equal(await page.locator('#reader').evaluate(el=>el.classList.contains('chrome-visible')),false,
    'Tapping an annotation must not display the reading toolbar');
