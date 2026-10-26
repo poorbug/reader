@@ -212,8 +212,10 @@ function wireText(item,doc){
  doc.addEventListener('load',()=>{measure(item);createUnderlines(item)},{capture:true,passive:true});
 }
 async function mount(item,gen){
- if(item.state==='ready'||item.state==='loading'||gen!==generation)return;
- item.state='loading';const sec=book.sections[item.index];
+ if(item.state==='ready'||item.state==='loading'||item.state==='skipped'||gen!==generation)return;
+ const sec=book.sections[item.index];
+ if(!sec||sec.linear==='no'||typeof sec.load!=='function')return;
+ item.state='loading';
  try{
   const src=await sec.load();if(gen!==generation){sec.unload?.();return}
   if(!src)throw Error('章节没有内容');
@@ -252,8 +254,8 @@ function release(item){
 function activeIndex(){
  const root=$('#scroll'),bounds=root.getBoundingClientRect();
  const y=bounds.top+Math.min(110,bounds.height*.25);
- const sections=items.filter(item=>item.el.getBoundingClientRect().bottom>y);
- return sections.length?sections[0].index:Math.max(0,items.length-1);
+ const sections=items.filter(item=>item.state!=='skipped'&&item.el.getBoundingClientRect().bottom>y);
+ return sections.length?sections[0].index:(items.findLast(item=>item.state!=='skipped')?.index??0);
 }
 function updateActive(){
  if(!book||restoring)return;
@@ -270,7 +272,7 @@ function updateActive(){
 function loadNearby(){
  if(!items.length||!book)return;
  const gen=generation,first=Math.max(0,current-BEFORE),last=Math.min(items.length-1,current+AFTER);
- for(let i=first;i<=last;i++)mount(items[i],gen);
+ for(let i=first;i<=last;i++)if(items[i].state!=='skipped')mount(items[i],gen);
  for(let i=0;i<items.length;i++){
   const it=items[i];
   if(it.state==='ready'&&(i<first||i>last))release(it);
@@ -279,7 +281,7 @@ function loadNearby(){
 function scheduleActive(){clearTimeout(updateTimer);updateTimer=setTimeout(updateActive,70)}
 async function goTo(target){
  if(!book||!target||!Number.isInteger(target.index)||target.index<0||target.index>=items.length)return;
- const item=items[target.index];current=target.index;loadNearby();
+ const item=items[target.index];if(item.state==='skipped')return;current=target.index;loadNearby();
  if(item.state!=='ready')await new Promise(resolve=>{item.onReady.push(resolve);mount(item,generation)});
  if(item.state!=='ready')return;
  let offset=0;
@@ -342,7 +344,9 @@ async function openFile(file,options={}){
   for(let i=0;i<book.sections.length;i++){
    const section=document.createElement('section');section.className='chapter placeholder';
    section.dataset.index=i;
-   const item={index:i,el:section,frame:null,height:Math.max(250,root.clientHeight),state:'idle',observer:null,onReady:[]};
+   const skip=book.sections[i]?.linear==='no'||typeof book.sections[i]?.load!=='function';
+   const item={index:i,el:section,frame:null,height:skip?0:Math.max(250,root.clientHeight),
+    state:skip?'skipped':'idle',observer:null,onReady:[]};
    section.style.height=item.height+'px';root.append(section);items.push(item);
   }
   restoring=true;
@@ -350,11 +354,17 @@ async function openFile(file,options={}){
   const cfiTarget=embedded&&options.cfi?resolveCFI(options.cfi):null;
   current=Number.isInteger(cfiTarget?.index)?cfiTarget.index:(Number.isInteger(saved?.index)?Math.max(0,Math.min(items.length-1,saved.index)):0);
   current=Math.max(0,Math.min(items.length-1,current));
+  if(items[current]?.state==='skipped'){
+   const next=items.slice(current).find(item=>item.state!=='skipped');
+   const previous=items.slice(0,current).reverse().find(item=>item.state!=='skipped');
+   current=(next||previous)?.index??0;
+  }
+  if(items[current]?.state==='skipped')throw Error('电子书没有可阅读章节');
   loadNearby();
   const item=items[current];if(item.state!=='ready')await new Promise(resolve=>{item.onReady.push(resolve);mount(item,gen)});
   if(item.state!=='ready')throw Error('无法加载初始章节');
   root.scrollTop=item.el.offsetTop+(saved?.fraction||0)*Math.max(0,item.height-root.clientHeight);
-  if(cfiTarget?.anchor&&(options.restoreExact||!Number.isFinite(options.sectionFraction))){try{const anchor=cfiTarget.anchor(item.frame.contentDocument);let y=0;if(typeof anchor==='number')y=anchor*item.height;else if(anchor?.getBoundingClientRect)y=anchor.getBoundingClientRect().top;root.scrollTop=item.el.offsetTop+y}catch(error){console.warn('Restore CFI failed',error)}}
+  if(cfiTarget?.anchor&&(options.restoreExact||typeof options.sectionFraction!=='number'||!Number.isFinite(options.sectionFraction))){try{const anchor=cfiTarget.anchor(item.frame.contentDocument);let y=0;if(typeof anchor==='number')y=anchor*item.height;else if(anchor?.getBoundingClientRect)y=anchor.getBoundingClientRect().top;root.scrollTop=item.el.offsetTop+y}catch(error){console.warn('Restore CFI failed',error)}}
   restoring=false;updateActive();
   $('#status').textContent=(book.metadata?.title||file.name)+' · '+book.sections.length+' 章 · 多章节连续滚动';
   logger('已加载 '+book.sections.length+' 个章节占位，实际同时保留最多 '+MAX_ACTIVE+' 个章节');
