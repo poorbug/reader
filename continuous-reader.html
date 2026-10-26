@@ -56,7 +56,8 @@ let embeddedBookId=null,bookOptions={},readerPrefs={size:19,lineHeight:1.8,margi
 const themes={paper:['#f6f0e5','#333b34'],white:['#ffffff','#222222'],green:['#e6eee6','#294034'],dark:['#26292b','#eeeeee']};
 const tell=(type,payload={})=>{if(embedded)parent.postMessage({type,bookId:embeddedBookId,...payload},location.origin)};
 let book=null,CFI=null,records=[],key='',items=[],current=0,selected=null,selectionControl=null,fontSize=19,generation=0,lastTap=0,saveTimer=null,updateTimer=null,restoring=false;
-const MAX_ACTIVE=5,BEFORE=2,AFTER=2,MAX_SIZE=30*1024*1024;
+const MAX_ACTIVE=5,BEFORE=2,AFTER=2,MAX_SIZE=30*1024*1024,SCROLL_IDLE_MS=200;
+let lastScrollAt=0,settleTimer=null;
 const logger=message=>{$('#log').textContent=message;console.log('[continuous]',message)};
 const fmt=index=>(index+1)+' / '+(book?.sections?.length||0)+' 章';
 function storageName(){return 'zhijian-continuous-test-v1:'+key}
@@ -66,15 +67,29 @@ function hidePanels(){$('#toolbar').classList.remove('visible');$('#panel').clas
 function toggleTools(){if(selected?.text)return;const time=Date.now();if(time-lastTap<550)return;lastTap=time;if(embedded)tell('READER_TAP');else $('#toolbar').classList.toggle('visible')}
 function clearSelection(){const controller=selectionControl;selectionControl=null;selected=null;$('#selection-tools').classList.remove('visible');controller?.clear();if(embedded)tell('ZHJ_SELECTION',{text:'',cfi:null})}
 async function hashFile(file){const bytes=await file.arrayBuffer();const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));return [Array.from(hash,x=>x.toString(16).padStart(2,'0')).join(''),bytes]}
-// A chapter keeps an exact placeholder height while its iframe loads and unloads.
-// Browser scroll anchoring is disabled: only this function adjusts positions above the viewport.
-function setChapterHeight(item,newHeight){
+// Defer height corrections above the viewport until native momentum scrolling stops.
+function scheduleIdleMaintenance(){
+ clearTimeout(settleTimer);
+ settleTimer=setTimeout(()=>{
+  if(Date.now()-lastScrollAt<SCROLL_IDLE_MS){scheduleIdleMaintenance();return}
+  if(!book||restoring)return;
+  for(const item of items)if(item.pendingHeight!==null){
+   const height=item.pendingHeight;item.pendingHeight=null;setChapterHeight(item,height,true);
+  }
+  pruneChapters();
+ },SCROLL_IDLE_MS);
+}
+function setChapterHeight(item,newHeight,afterScroll=false){
  const height=Math.max(20,Math.ceil(newHeight));
  const old=item.height;
- if(Math.abs(height-old)<2)return;
+ if(Math.abs(height-old)<2){item.pendingHeight=null;return}
  const scroller=$('#scroll');
  const top=item.el.offsetTop,oldBottom=top+old;
  const compensate=!restoring&&oldBottom<=scroller.scrollTop+1;
+ if(compensate&&!afterScroll&&Date.now()-lastScrollAt<SCROLL_IDLE_MS){
+  item.pendingHeight=height;scheduleIdleMaintenance();return;
+ }
+ item.pendingHeight=null;
  const previousScroll=scroller.scrollTop;
  item.height=height;
  item.el.style.height=height+'px';
@@ -83,12 +98,20 @@ function setChapterHeight(item,newHeight){
 }
 function measure(item){
  if(item.state!=='ready'||!item.frame?.contentDocument)return;
- const doc=item.frame.contentDocument,body=doc.body;
+ const body=item.frame.contentDocument.body;
  if(!body)return;
- // The iframe viewport may exceed short chapter content; measure the BODY, not the iframe.
+ // The iframe viewport may exceed short content; do not observe its own root.
  const height=Math.max(body.scrollHeight,body.getBoundingClientRect().height)+2;
- if(!Number.isFinite(height))return;
- setChapterHeight(item,height);
+ if(Number.isFinite(height))setChapterHeight(item,height);
+}
+function scheduleMeasure(item){
+ if(item.measureFrame||item.state!=='ready')return;
+ item.measureFrame=requestAnimationFrame(()=>{
+  item.measureFrame=null;
+  if(item.state!=='ready')return;
+  measure(item);
+  if(records.some(note=>note.cfi))createUnderlines(item);
+ });
 }
 function applyStyles(doc){
  const [bg,fg]=themes[readerPrefs.theme]||themes.paper;
@@ -103,7 +126,7 @@ function setPreferences(prefs){
  readerPrefs={...readerPrefs,...(prefs||{})};fontSize=Number(readerPrefs.size)||fontSize;
  for(const item of items)if(item.state==='ready'){
   applyStyles(item.frame.contentDocument);
-  requestAnimationFrame(()=>{measure(item);createUnderlines(item)});
+  scheduleMeasure(item);
  }
 }
 
@@ -160,13 +183,14 @@ function createUnderlines(item){
  const doc=item.frame?.contentDocument;
  if(!doc||item.state!=='ready')return;
  doc.querySelector('[data-zj-note-layer]')?.remove();
+ const relevantNotes=records.filter(note=>note.cfi&&resolveCFI(note.cfi)?.index===item.index);
+ doc.__zhijianNoteHitRects=[];
+ if(!relevantNotes.length)return;
  const hitRects=[];
  const layer=doc.createElement('div');layer.dataset.zjNoteLayer='';layer.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:1000';
  doc.body.append(layer);
- for(const note of records){
-  if(!note.cfi)continue;
+ for(const note of relevantNotes){
   const resolved=resolveCFI(note.cfi);
-  if(resolved?.index!==item.index)continue;
   try{
    const range=resolved.anchor(doc);if(!range?.getClientRects)continue;
    for(const rect of range.getClientRects()){
@@ -216,8 +240,10 @@ function wireText(item,doc){
   return true;
  };
  doc.addEventListener('touchstart',event=>{
+  lastScrollAt=Date.now();
   if(event.touches.length!==1)return;const t=event.touches[0];start={x:t.clientX,y:t.clientY,time:Date.now(),moved:false}
  },{capture:true,passive:true});
+ doc.addEventListener('wheel',()=>{lastScrollAt=Date.now();scheduleIdleMaintenance()},{passive:true});
  doc.addEventListener('touchmove',event=>{
   if(start&&event.touches.length===1){const t=event.touches[0];if(Math.hypot(t.clientX-start.x,t.clientY-start.y)>12)start.moved=true}
  },{capture:true,passive:true});
@@ -273,15 +299,21 @@ async function mount(item,gen){
   if(gen!==generation)return;
   const doc=iframe.contentDocument;if(!doc?.body)throw Error('无法访问章节正文');
   applyStyles(doc);
-  item.state='ready';wireText(item,doc);locateLegacyMobiNotes(item);
-  const observer=new ResizeObserver(()=>{measure(item);createUnderlines(item)});
-  observer.observe(doc.documentElement);observer.observe(doc.body);
+  item.state='ready';
+  // Establish the real height before resolving navigation/progress restoration.
+  measure(item);
+  wireText(item,doc);locateLegacyMobiNotes(item);
+  const observer=new ResizeObserver(()=>scheduleMeasure(item));
+  observer.observe(doc.body);
   item.observer=observer;
-  doc.fonts?.ready?.then(()=>measure(item)).catch(()=>{});
-  requestAnimationFrame(()=>{measure(item);createUnderlines(item)});
-  for(const image of doc.images||[]){if(!image.complete)image.addEventListener('load',()=>{measure(item);createUnderlines(item)},{once:true})}
+  doc.fonts?.ready?.then(()=>scheduleMeasure(item)).catch(()=>{});
+  scheduleMeasure(item);
+  for(const image of doc.images||[]){if(!image.complete)image.addEventListener('load',()=>scheduleMeasure(item),{once:true})}
   if(item.onReady){for(const fn of item.onReady.splice(0))fn()}
-  if(Math.abs(item.index-current)>Math.max(BEFORE,AFTER))release(item);
+  if(Math.abs(item.index-current)>Math.max(BEFORE,AFTER)){
+   if(Date.now()-lastScrollAt<SCROLL_IDLE_MS)scheduleIdleMaintenance();
+   else release(item);
+  }
  }catch(error){
   item.state='failed';if(item.onReady)for(const fn of item.onReady.splice(0))fn();item.el.textContent='章节 '+(item.index+1)+' 加载失败：'+error.message;
   item.el.style.padding='20px';logger(error.message);
@@ -289,16 +321,25 @@ async function mount(item,gen){
 }
 function release(item){
  if(item.state!=='ready'&&item.state!=='failed')return;
- item.observer?.disconnect();item.observer=null;item.frame=null;item.state='idle';
+ item.observer?.disconnect();item.observer=null;
+ if(item.measureFrame){cancelAnimationFrame(item.measureFrame);item.measureFrame=null}
+ item.pendingHeight=null;item.frame=null;item.state='idle';
  item.el.classList.add('placeholder');item.el.replaceChildren();item.el.style.padding='';
  item.el.style.height=item.height+'px';
  try{book.sections[item.index].unload?.()}catch{}
 }
 function activeIndex(){
- const root=$('#scroll'),bounds=root.getBoundingClientRect();
- const y=bounds.top+Math.min(110,bounds.height*.25);
- const sections=items.filter(item=>item.state!=='skipped'&&item.el.getBoundingClientRect().bottom>y);
- return sections.length?sections[0].index:(items.findLast(item=>item.state!=='skipped')?.index??0);
+ const root=$('#scroll');
+ const y=Math.max(0,root.scrollTop)+Math.min(110,root.clientHeight*.25);
+ // Binary search avoids layout reads for every chapter on every scroll.
+ let lo=0,hi=items.length-1,found=items.length;
+ while(lo<=hi){
+  const mid=(lo+hi)>>1,item=items[mid];
+  if(item.el.offsetTop+item.el.offsetHeight>y){found=mid;hi=mid-1}
+  else lo=mid+1;
+ }
+ while(found<items.length&&items[found].state==='skipped')found++;
+ return found<items.length?found:(items.findLast(item=>item.state!=='skipped')?.index??0);
 }
 function updateActive(){
  if(!book||restoring)return;
@@ -312,14 +353,17 @@ function updateActive(){
  },450);
  loadNearby();
 }
+function pruneChapters(){
+ const first=Math.max(0,current-BEFORE),last=Math.min(items.length-1,current+AFTER);
+ for(const item of items)if(item.state==='ready'&&(item.index<first||item.index>last))release(item);
+}
 function loadNearby(){
  if(!items.length||!book)return;
  const gen=generation,first=Math.max(0,current-BEFORE),last=Math.min(items.length-1,current+AFTER);
  for(let i=first;i<=last;i++)if(items[i].state!=='skipped')mount(items[i],gen);
- for(let i=0;i<items.length;i++){
-  const it=items[i];
-  if(it.state==='ready'&&(i<first||i>last))release(it);
- }
+ // Removing iframe documents during kinetic scroll stalls the compositor.
+ if(Date.now()-lastScrollAt<SCROLL_IDLE_MS)scheduleIdleMaintenance();
+ else pruneChapters();
 }
 function scheduleActive(){clearTimeout(updateTimer);updateTimer=setTimeout(updateActive,70)}
 async function goTo(target){
@@ -370,10 +414,10 @@ function saveNote(withNote){
  records.push(entry);persist({notes:records});redrawNotes();clearSelection();logger('已保存'+(withNote?'笔记':'划线'));
 }
 async function openFile(file,options={}){
- const gen=++generation;bookOptions=options;embeddedBookId=options.bookId||null;activeBookFormat=options.format||'epub';readerPrefs={...readerPrefs,...(options.prefs||{})};fontSize=Number(readerPrefs.size)||19;$('#status').textContent='正在解析 '+file.name+' …';
+ const gen=++generation;clearTimeout(settleTimer);lastScrollAt=0;bookOptions=options;embeddedBookId=options.bookId||null;activeBookFormat=options.format||'epub';readerPrefs={...readerPrefs,...(options.prefs||{})};fontSize=Number(readerPrefs.size)||19;$('#status').textContent='正在解析 '+file.name+' …';
  const loading=$('#reader-loading');if(embedded){loading.hidden=false;loading.textContent='正在加载 '+activeBookFormat.toUpperCase()+' 阅读引擎…'}
  clearSelection();hidePanels();
- const old=book;for(const it of items){it.observer?.disconnect();try{old?.sections?.[it.index]?.unload?.()}catch{}}
+ const old=book;for(const it of items){it.observer?.disconnect();if(it.measureFrame)cancelAnimationFrame(it.measureFrame);try{old?.sections?.[it.index]?.unload?.()}catch{}}
  old?.destroy?.();book=null;items=[];$('#scroll').replaceChildren();$('#scroll').scrollTop=0;$('#progress').hidden=true;
  try{
   if(file.size>(embedded?250*1024*1024:MAX_SIZE))throw Error('文件体积超过当前阅读器限制');
@@ -390,7 +434,7 @@ async function openFile(file,options={}){
    section.dataset.index=i;
    const skip=book.sections[i]?.linear==='no'||typeof book.sections[i]?.load!=='function';
    const item={index:i,el:section,frame:null,height:skip?0:Math.max(250,root.clientHeight),
-    state:skip?'skipped':'idle',observer:null,onReady:[]};
+    state:skip?'skipped':'idle',observer:null,measureFrame:null,pendingHeight:null,onReady:[]};
    section.style.height=item.height+'px';root.append(section);items.push(item);
   }
   restoring=true;
@@ -429,7 +473,7 @@ $('#load-url').onclick=async()=>{
  }catch(e){$('#status').textContent='地址导入失败：'+e.message}
  finally{btn.disabled=false}
 };
-$('#scroll').addEventListener('scroll',()=>{scheduleActive();if(embedded)tell('READER_SCROLL')},{passive:true});
+$('#scroll').addEventListener('scroll',()=>{lastScrollAt=Date.now();scheduleActive();scheduleIdleMaintenance();if(embedded)tell('READER_SCROLL')},{passive:true});
 $('#toc').onclick=()=>renderPanel('toc');$('#notes').onclick=()=>renderPanel('notes');
 $('#panel-close').onclick=()=>$('#panel').classList.remove('visible');
 $('#hide').onclick=()=>$('#toolbar').classList.remove('visible');
