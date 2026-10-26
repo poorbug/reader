@@ -106,7 +106,7 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
  border:1px solid color-mix(in srgb,var(--reader-fg,#333b34) 22%,transparent);
  box-shadow:0 10px 36px #0005;
 }
-.immersive-reader .inline-note-header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:15px}
+.immersive-reader .inline-note-header{display:flex;align-items:center;justify-content:flex-end;gap:12px;font-size:15px}
 .immersive-reader .inline-note-dismiss{font-size:25px;line-height:1;border:0;background:transparent;color:inherit;padding:4px 7px}
 .immersive-reader .inline-note-excerpt{
  margin:12px 0 9px;max-height:100px;overflow:auto;overflow-wrap:anywhere;
@@ -122,7 +122,11 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
  border-radius:11px;padding:12px 8px;background:color-mix(in srgb,var(--reader-fg) 9%,transparent);
  color:inherit;font-size:15px
 }
-.immersive-reader .inline-note-buttons [data-action="delete"]{color:#be5959;border-color:#be595957}
+.immersive-reader .inline-note-buttons [data-action="delete"]{
+ flex:0 0 44px;min-width:44px;display:flex;align-items:center;justify-content:center;
+ padding:10px;color:#be5959;border-color:#be595957;
+}
+.immersive-reader .inline-note-buttons [data-action="delete"] svg{display:block;width:21px;height:21px;flex:none}
 
 /* v1.0.25 — larger back affordance; quoted book text secondary to personal notes. */
 .immersive-reader #reader-back{
