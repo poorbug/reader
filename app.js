@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.70';
+const APP_VERSION='1.0.71';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='reading',view='shelf',notesGroupBookId=null,active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
