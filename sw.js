@@ -35,6 +35,13 @@ self.addEventListener('message',event=>{
 self.addEventListener('fetch',event=>{
  if(event.request.method!=='GET')return;
  const url=new URL(event.request.url);
+ // Shared-book query parameters describe a download, not a separate app shell.
+ // Serve the cached root without storing the source URL in the offline cache.
+ const shell=new URL('./',self.registration.scope);
+ if(event.request.mode==='navigate'&&url.origin===shell.origin&&url.pathname===shell.pathname&&url.searchParams.has('import')){
+  event.respondWith(caches.match(shell.href).then(hit=>hit||fetch(shell.href)));
+  return;
+ }
  // Keep the experimental EPUB page network-first so changes show without stale PWA caches.
  if(url.origin===self.location.origin&&url.pathname.endsWith('/epub-engine-test.html')){
   event.respondWith(fetch(event.request,{cache:'no-store'}).catch(()=>caches.match(event.request)));
