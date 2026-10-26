@@ -472,7 +472,7 @@ function markAnnotationTap(){
 }
 function scheduleReaderTap(){
  if(readerTapTimer){clearTimeout(readerTapTimer);readerTapTimer=null}
- if($('#inline-note-actions')){closeInlineNoteActions();return}
+ if($('#inline-note-actions'))return;
  if(Date.now()<annotationTapUntil)return;
  readerTapTimer=setTimeout(()=>{
   readerTapTimer=null;
@@ -669,7 +669,7 @@ function probeEpubEvents(){
   }
  }
 }
-function toggleReaderChrome(show){epubTrace('工具栏切换请求: '+String(show));if(show!==false&&$('#inline-note-actions')){closeInlineNoteActions();return}const r=$('#reader');if(!r)return;const visible=show===undefined?!r.classList.contains('chrome-visible'):show;r.classList.toggle('chrome-visible',visible);epubTrace('工具栏实际显示: '+visible);if(!visible)closeReaderPanels()}
+function toggleReaderChrome(show){epubTrace('工具栏切换请求: '+String(show));if(show!==false&&$('#inline-note-actions'))return;const r=$('#reader');if(!r)return;const visible=show===undefined?!r.classList.contains('chrome-visible'):show;r.classList.toggle('chrome-visible',visible);epubTrace('工具栏实际显示: '+visible);if(!visible)closeReaderPanels()}
 function readerSettings(kind){const p=$('#reading-settings');if(!p)return;if(!p.hidden&&p.dataset.kind===kind){closeReaderPanels();return}openReaderPanel(kind);const colors=kind==='colors';p.innerHTML=colors?'<div class="setting-title">亮度与背景</div><label>亮度 <input id="reader-brightness" type="range" min="45" max="100" value="'+(settings.brightness??100)+'"></label><div class="theme-options">'+Object.entries({paper:'纸张',white:'白色',green:'护眼',dark:'夜间'}).map(([k,v])=>'<button class="theme-option '+(settings.theme===k?'selected':'')+'" aria-pressed="'+(settings.theme===k)+'" data-theme="'+k+'">'+v+'</button>').join('')+'</div>':'<div class="setting-title">字体与排版</div><label>字号 <input id="reader-size" type="range" min="14" max="32" value="'+settings.size+'"></label><label>行距 <input id="reader-lines" type="range" min="1.3" max="2.5" step="0.1" value="'+settings.lineHeight+'"></label><label>左右边距 <span id="margin-value">'+(settings.margin??18)+'px</span><input id="reader-margin" type="range" min="8" max="48" step="1" value="'+(settings.margin??18)+'"></label><label>段落间距 <input id="reader-paragraph" type="range" min="0" max="2" step="0.1" value="'+(settings.paragraph??0.8)+'"></label>';
 p.hidden=false;
 const changed=()=>{saveSettings();updateReaderAppearance();if(['mobi','epub'].includes(active?.format))$('#document-body iframe')?.contentWindow?.postMessage({type:'MOBI_SET_PREFS',prefs:settings},location.origin)};
