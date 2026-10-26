@@ -643,7 +643,7 @@ async function showHighlights(){
 }
 
 
-function readerShell(title,content){return '<section class="reader immersive-reader" id="reader"><div class="reader-body reader-full">'+content+'</div><header class="reader-top reading-chrome" id="reader-top"><button class="icon-btn" id="reader-back" aria-label="返回"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span class="title">'+esc(title)+'</span><span style="width:38px"></span></header><footer class="reading-chrome reader-toolbar" id="reader-toolbar"><button id="reader-toc" aria-label="目录">☰<small>目录</small></button><button id="reader-notes" aria-label="查看本书划线和笔记">✎<small>笔记</small></button><button disabled aria-label="进度稍后开放">◉<small>进度</small></button><button id="reader-colors" aria-label="颜色和亮度">☼<small>颜色</small></button><button id="reader-fonts" aria-label="字体和排版">A<small>字体</small></button></footer><div class="reading-dimmer" id="reading-dimmer"></div><div class="reading-settings" id="reading-settings" hidden></div><button type="button" id="reader-edge-toggle" class="reader-edge-toggle" aria-label="显示或隐藏阅读工具栏">☰</button></section>'}
+function readerShell(title,content){return '<section class="reader immersive-reader" id="reader"><div class="reader-body reader-full">'+content+'</div><header class="reader-top reading-chrome" id="reader-top"><button class="icon-btn" id="reader-back" aria-label="返回"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span class="title">'+esc(title)+'</span><button type="button" class="icon-btn reader-share-book" id="reader-share-book" aria-label="分享本书" title="分享本书"><svg viewBox="0 0 24 24" width="25" height="25" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.3"/><circle cx="6" cy="12" r="2.3"/><circle cx="18" cy="19" r="2.3"/><path d="m8.1 11 7.8-4.8m-7.8 6.8 7.8 4.8"/></svg></button></header><footer class="reading-chrome reader-toolbar" id="reader-toolbar"><button id="reader-toc" aria-label="目录">☰<small>目录</small></button><button id="reader-notes" aria-label="查看本书划线和笔记">✎<small>笔记</small></button><button disabled aria-label="进度稍后开放">◉<small>进度</small></button><button id="reader-colors" aria-label="颜色和亮度">☼<small>颜色</small></button><button id="reader-fonts" aria-label="字体和排版">A<small>字体</small></button></footer><div class="reading-dimmer" id="reading-dimmer"></div><div class="reading-settings" id="reading-settings" hidden></div><button type="button" id="reader-edge-toggle" class="reader-edge-toggle" aria-label="显示或隐藏阅读工具栏">☰</button></section>'}
 function closeReaderPanels(){const p=$('#reading-settings');if(p){p.hidden=true;p.dataset.kind=''}for(const k of ['toc','notes','colors','fonts'])$('#reader-'+k)?.classList.remove('selected')}
 function openReaderPanel(kind){const p=$('#reading-settings');if(!p)return;p.hidden=false;p.dataset.kind=kind;for(const k of ['toc','notes','colors','fonts'])$('#reader-'+k)?.classList.toggle('selected',k===kind)}
 const epubDiagnostics={enabled:false,events:[],chapterCount:0,counts:{}};
@@ -691,7 +691,69 @@ function syncPageTheme(theme){
  document.querySelector('meta[name="theme-color"]')?.setAttribute('content',bg);
 }
 function updateReaderAppearance(){const r=$('#reader');if(!r)return;const [bg,fg]=palette[settings.theme]||palette.paper;r.style.background=bg;r.style.color=fg;r.style.setProperty('--reader-bg',bg);r.style.setProperty('--reader-fg',fg);r.dataset.theme=settings.theme;syncPageTheme(settings.theme);const d=$('#reading-dimmer');if(d)d.style.opacity=String((100-(settings.brightness||100))/100);if(active?.format==='epub'&&rendition)applyTheme()}
-function setupReaderChrome(onBack,format){const edge=$('#reader-edge-toggle');if(edge){edge.hidden=true;edge.onclick=e=>{e.stopPropagation();toggleReaderChrome()}}$('#reader-back').onclick=onBack;$('#reader-toc').onclick=showToc;$('#reader-notes').onclick=showBookNotes;$('#reader-colors').onclick=()=>readerSettings('colors');$('#reader-fonts').onclick=()=>readerSettings('fonts');updateReaderAppearance();const surface=$('#reader .reader-full');let y=0,x=0;surface?.addEventListener('touchstart',e=>{if(e.touches.length===1){y=e.touches[0].clientY;x=e.touches[0].clientX}},{passive:true});surface?.addEventListener('touchmove',e=>{if(e.touches.length===1&&(Math.abs(e.touches[0].clientY-y)>12||Math.abs(e.touches[0].clientX-x)>12))toggleReaderChrome(false)},{passive:true});surface?.addEventListener('wheel',()=>toggleReaderChrome(false),{passive:true})}
+// Build the same stateless ?import=URL that the bookshelf and note QR use.
+// Local-only ebooks have no public URL, so must not produce a misleading link.
+function getBookShareLink(book){
+ if(!book?.sourceUrl)return null;
+ try{
+  const source=new URL(book.sourceUrl);
+  if(source.protocol!=='https:'||source.username||source.password)return null;
+  const site=new URL('./',location.href);
+  site.searchParams.set('import',source.href);
+  return site.href;
+ }catch{return null}
+}
+function closeBookShareDialog(){document.getElementById('reader-book-share-dialog')?.remove()}
+function showBookShareDialog(link,book){
+ closeBookShareDialog();
+ const overlay=document.createElement('div');overlay.className='book-share-overlay';overlay.id='reader-book-share-dialog';
+ overlay.innerHTML='<section class="book-share-dialog" role="dialog" aria-modal="true" aria-label="分享本书">'
+  +'<div class="book-share-head"><strong>分享本书</strong><button type="button" class="book-share-close" aria-label="关闭">×</button></div>'
+  +'<p class="book-share-caption"></p><label for="reader-share-url">分享链接</label>'
+  +'<input id="reader-share-url" type="text" readonly aria-label="本书分享链接">'
+  +'<p class="book-share-tip">朋友打开链接后，电子书会自动加入其纸间书架；已有则不会重复添加。</p>'
+  +'<button type="button" class="btn" id="reader-share-copy">复制链接</button>'
+  +'<p class="book-share-feedback" aria-live="polite"></p></section>';
+ const input=overlay.querySelector('#reader-share-url');
+ input.value=link;
+ overlay.querySelector('.book-share-caption').textContent='《'+(book.title||'电子书')+'》';
+ overlay.querySelector('.book-share-close').onclick=closeBookShareDialog;
+ overlay.addEventListener('click',event=>{if(event.target===overlay)closeBookShareDialog()});
+ overlay.querySelector('#reader-share-copy').onclick=async()=>{
+  const feedback=overlay.querySelector('.book-share-feedback');
+  try{
+   if(!navigator.clipboard?.writeText)throw Error('Clipboard API unavailable');
+   await navigator.clipboard.writeText(link);
+   feedback.textContent='链接已复制，可以直接发送给朋友。';
+  }catch{
+   input.focus();input.select();
+   feedback.textContent='无法自动复制，请长按或选择输入框中的链接进行复制。';
+  }
+ };
+ document.body.append(overlay);
+}
+function shareCurrentBook(){
+ const book=active;if(!book)return;
+ const link=getBookShareLink(book);
+ if(!link){
+  toast('此书没有公开 HTTPS 下载地址，暂时无法分享。可使用原 HTTPS 地址重新导入，系统会自动去重。');
+  return;
+ }
+ // Call share() directly from the button gesture. Awaiting other async work first
+ // would lose iOS Web Share's required transient user activation.
+ if(typeof navigator.share==='function'){
+  try{
+   Promise.resolve(navigator.share({
+    title:'《'+(book.title||'电子书')+'》 · 纸间',
+    text:'分享《'+(book.title||'电子书')+'》，打开链接即可加入纸间书架。',
+    url:link
+   })).catch(error=>{
+    if(error?.name!=='AbortError')showBookShareDialog(link,book);
+   });
+  }catch(error){if(error?.name!=='AbortError')showBookShareDialog(link,book)}
+ }else showBookShareDialog(link,book);
+}
+function setupReaderChrome(onBack,format){const edge=$('#reader-edge-toggle');if(edge){edge.hidden=true;edge.onclick=e=>{e.stopPropagation();toggleReaderChrome()}}$('#reader-back').onclick=onBack;$('#reader-share-book').onclick=shareCurrentBook;$('#reader-toc').onclick=showToc;$('#reader-notes').onclick=showBookNotes;$('#reader-colors').onclick=()=>readerSettings('colors');$('#reader-fonts').onclick=()=>readerSettings('fonts');updateReaderAppearance();const surface=$('#reader .reader-full');let y=0,x=0;surface?.addEventListener('touchstart',e=>{if(e.touches.length===1){y=e.touches[0].clientY;x=e.touches[0].clientX}},{passive:true});surface?.addEventListener('touchmove',e=>{if(e.touches.length===1&&(Math.abs(e.touches[0].clientY-y)>12||Math.abs(e.touches[0].clientX-x)>12))toggleReaderChrome(false)},{passive:true});surface?.addEventListener('wheel',()=>toggleReaderChrome(false),{passive:true})}
 window.addEventListener('message',e=>{if(e.origin===location.origin&&e.data?.type==='READER_ERROR'&&active?.id===e.data.bookId)toast('电子书打开失败：'+(e.data.message||'未知错误'))});
 window.addEventListener('message',e=>{if(e.origin===location.origin&&e.data?.type==='READER_TAP')scheduleReaderTap();if(e.origin===location.origin&&e.data?.type==='READER_SCROLL')toggleReaderChrome(false)});
 window.addEventListener('message',e=>{if(e.origin!==location.origin||e.data?.type!=='MOBI_TOC_ENTRIES'||!active||!['mobi','epub'].includes(active.format))return;const p=$('#reading-settings');if(p?.hidden||p.dataset.kind!=='toc')return;const entries=$('#toc-entries');if(!entries)return;const arr=Array.isArray(e.data.entries)?e.data.entries:[];entries.innerHTML=arr.length?arr.map((x,i)=>'<button class="toc-item" data-index="'+i+'">'+esc(x.label)+'</button>').join(''):'此书没有目录';entries.querySelectorAll('[data-index]').forEach(x=>x.onclick=()=>{$('#document-body iframe')?.contentWindow?.postMessage({type:'MOBI_GOTO_TOC',index:Number(x.dataset.index)},location.origin);closeReaderPanels()})});
