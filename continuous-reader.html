@@ -120,6 +120,7 @@ function createUnderlines(item){
  const doc=item.frame?.contentDocument;
  if(!doc||item.state!=='ready')return;
  doc.querySelector('[data-zj-note-layer]')?.remove();
+ const hitRects=[];
  const layer=doc.createElement('div');layer.dataset.zjNoteLayer='';layer.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:1000';
  doc.body.append(layer);
  for(const note of records){
@@ -130,12 +131,29 @@ function createUnderlines(item){
    const range=resolved.anchor(doc);if(!range?.getClientRects)continue;
    for(const rect of range.getClientRects()){
     if(rect.width<1||rect.height<1)continue;
+    // The underline stays non-interactive so scrolling and selection still work.
+    // Text hit testing is handled before the ordinary reader tap handler.
+    hitRects.push({noteId:note.id,left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom});
     const line=doc.createElement('div');
     line.style.cssText='position:absolute;pointer-events:none;background:#4b8174;height:2.5px;left:'+(rect.left+doc.defaultView.scrollX)+'px;top:'+(rect.bottom-2+doc.defaultView.scrollY)+'px;width:'+rect.width+'px';
     layer.append(line);
    }
   }catch(e){console.warn('笔记划线定位失败',e)}
  }
+ doc.__zhijianNoteHitRects=hitRects;
+}
+function noteAtPoint(doc,x,y){
+ // Look up the saved range rectangles, rather than intercepting clicks with
+ // opaque overlays which would break long-press selection or touch scrolling.
+ if(!Number.isFinite(x)||!Number.isFinite(y))return null;
+ const hits=doc?.__zhijianNoteHitRects||[];
+ for(let i=hits.length-1;i>=0;i--){
+  const r=hits[i];
+  if(x>=r.left-3&&x<=r.right+3&&y>=r.top-4&&y<=r.bottom+5){
+   return records.find(note=>note.id===r.noteId)||null;
+  }
+ }
+ return null;
 }
 function wireText(item,doc){
  const api=window.ZhijianSelection?.install(doc,{onChange:detail=>{
@@ -145,7 +163,18 @@ function wireText(item,doc){
   if(embedded)tell('ZHJ_SELECTION',{format:activeBookFormat,text:selected.text,cfi:getSelectedCFI(item.index,selected.range)});
   else $('#selection-tools').classList.add('visible');
  }});
- let start=null,lastTouch=0;
+ let start=null,lastTouch=0,lastNoteTap=0;
+ const activateNoteAt=(x,y)=>{
+  const note=noteAtPoint(doc,x,y);
+  if(!note)return false;
+  if(Date.now()-lastNoteTap>650){
+   lastNoteTap=Date.now();
+   if(embedded)tell('MOBI_INLINE_NOTE',{noteId:note.id});
+   else renderPanel('notes');
+  }
+  lastTouch=Date.now();
+  return true;
+ };
  doc.addEventListener('touchstart',event=>{
   if(event.touches.length!==1)return;const t=event.touches[0];start={x:t.clientX,y:t.clientY,time:Date.now(),moved:false}
  },{capture:true,passive:true});
@@ -155,9 +184,18 @@ function wireText(item,doc){
  doc.addEventListener('touchend',event=>{
   const p=start;start=null;const t=event.changedTouches?.[0];
   if(!p||!t||p.moved||Date.now()-p.time>380||Math.hypot(t.clientX-p.x,t.clientY-p.y)>12||doc.__zhijianSelecting||doc.__zhijianSelectionActive||event.target?.closest?.('a,button,input'))return;
+  if(activateNoteAt(t.clientX,t.clientY)){
+   // Suppress Safari's synthesized click, otherwise it also opens the toolbar.
+   event.preventDefault();
+   return;
+  }
   lastTouch=Date.now();toggleTools();
- },{capture:true,passive:true});
+ },{capture:true,passive:false});
  doc.addEventListener('click',event=>{
+  if(activateNoteAt(event.clientX,event.clientY)){
+   event.preventDefault();event.stopImmediatePropagation();
+   return;
+  }
   const link=event.target.closest?.('a[href]');
   if(link){
    const href=link.getAttribute('href');
