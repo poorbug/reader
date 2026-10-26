@@ -289,8 +289,8 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .note-share-loading{color:#dfd1ab;text-align:center;padding:30px 10px;font-size:14px}
 .note-share-loading[hidden]{display:none}
 .note-share-source-missing{font-size:12px;line-height:1.6;color:#68786d;margin:12px 0 0}
-.note-share-controls{display:flex;gap:10px}
+.note-share-controls{display:flex;gap:10px;margin-top:20px;align-items:stretch}
 .note-share-controls .btn{flex:1;min-width:0;text-align:center;font-size:14px;padding:11px 8px}
 .note-share-controls .btn:disabled{opacity:.5;cursor:wait}
 .book-note-actions{flex-wrap:wrap}
-@media(max-height:680px){.note-share-preview img{max-height:47dvh}.note-share-sheet{max-height:92dvh}}
+@media(max-height:680px){.note-share-preview img{max-height:47dvh}.note-share-sheet{max-height:92dvh}.note-share-controls{margin-top:16px}}
