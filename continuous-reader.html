@@ -11,6 +11,8 @@
 #load-url{border:0;border-radius:7px;padding:8px 10px;background:#397361;color:white;font-size:13px}
 #status{flex-basis:100%;font-size:12px;color:#64746c;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
 #surface{position:relative;flex:1;min-height:0}
+#reader-loading{position:absolute;inset:0;z-index:16;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:24px;text-align:center;background:#f5f0e7;color:#30443a;font-size:15px;line-height:1.6;pointer-events:none}
+#reader-loading[hidden]{display:none}
 #scroll{position:relative;height:100%;overflow:auto;overflow-anchor:none;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 #scroll::-webkit-scrollbar{display:none}
 .chapter{position:relative;min-height:0;overflow-anchor:none;overflow:hidden;background:var(--page-bg,#f5f0e7)}
@@ -40,7 +42,7 @@ body.embedded #app{height:100dvh}
 <div id="status" role="status">连续章节渲染实验 · 本地文件或 HTTPS 链接</div>
 </header>
 <main id="surface">
-<div id="scroll"></div><div id="progress" hidden></div>
+<div id="scroll"></div><div id="reader-loading" hidden role="status" aria-live="polite"></div><div id="progress" hidden></div>
 <div id="panel"><button id="panel-close" style="float:right">关闭</button><div id="panel-body"></div></div>
 <div id="selection-tools"><button id="mark">划线</button><button id="note">笔记</button><button id="copy">复制</button><button id="clear">取消</button></div>
 <footer id="toolbar"><button id="toc">目录</button><button id="notes">笔记</button><button id="minus">A−</button><button id="plus">A+</button><button id="hide">隐藏</button></footer>
@@ -49,7 +51,7 @@ body.embedded #app{height:100dvh}
 <script type="module">
 const $=selector=>document.querySelector(selector);
 const embedded=new URLSearchParams(location.search).has('embed');
-if(embedded)document.body.classList.add('embedded');
+if(embedded){document.body.classList.add('embedded');const msg=document.querySelector('#reader-loading');msg.hidden=false;msg.textContent='正在准备阅读…'}
 let embeddedBookId=null,bookOptions={},readerPrefs={size:19,lineHeight:1.8,margin:18,paragraph:0.8,theme:'paper'},activeBookFormat='epub';
 const themes={paper:['#f6f0e5','#333b34'],white:['#ffffff','#222222'],green:['#e6eee6','#294034'],dark:['#26292b','#eeeeee']};
 const tell=(type,payload={})=>{if(embedded)parent.postMessage({type,bookId:embeddedBookId,...payload},location.origin)};
@@ -369,6 +371,7 @@ function saveNote(withNote){
 }
 async function openFile(file,options={}){
  const gen=++generation;bookOptions=options;embeddedBookId=options.bookId||null;activeBookFormat=options.format||'epub';readerPrefs={...readerPrefs,...(options.prefs||{})};fontSize=Number(readerPrefs.size)||19;$('#status').textContent='正在解析 '+file.name+' …';
+ const loading=$('#reader-loading');if(embedded){loading.hidden=false;loading.textContent='正在加载 '+activeBookFormat.toUpperCase()+' 阅读引擎…'}
  clearSelection();hidePanels();
  const old=book;for(const it of items){it.observer?.disconnect();try{old?.sections?.[it.index]?.unload?.()}catch{}}
  old?.destroy?.();book=null;items=[];$('#scroll').replaceChildren();$('#scroll').scrollTop=0;$('#progress').hidden=true;
@@ -409,8 +412,8 @@ async function openFile(file,options={}){
   restoring=false;updateActive();
   $('#status').textContent=(book.metadata?.title||file.name)+' · '+book.sections.length+' 章 · 多章节连续滚动';
   logger('已加载 '+book.sections.length+' 个章节占位，实际同时保留最多 '+MAX_ACTIVE+' 个章节');
-  if(embedded)tell('READER_READY',{format:activeBookFormat});
- }catch(e){restoring=false;$('#status').textContent='打开失败：'+e.message;logger('打开失败 '+e.message);console.error(e);if(embedded)tell('READER_ERROR',{message:e.message})}
+  if(embedded){loading.hidden=true;tell('READER_READY',{format:activeBookFormat})}
+ }catch(e){restoring=false;$('#status').textContent='打开失败：'+e.message;logger('打开失败 '+e.message);console.error(e);if(embedded){loading.hidden=false;loading.textContent=activeBookFormat.toUpperCase()+' 打开失败：'+e.message;tell('READER_ERROR',{message:e.message})}}
 }
 $('#file').onchange=e=>openFile(e.target.files[0]);
 $('#load-url').onclick=async()=>{
