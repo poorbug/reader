@@ -13,9 +13,9 @@
 #surface{position:relative;flex:1;min-height:0}
 #reader-loading{position:absolute;inset:0;z-index:16;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:24px;text-align:center;background:#f5f0e7;color:#30443a;font-size:15px;line-height:1.6;pointer-events:none}
 #reader-loading[hidden]{display:none}
-#scroll{position:relative;height:100%;overflow:auto;overflow-anchor:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#scroll{position:relative;height:100%;overflow:auto;overflow-anchor:none;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 #scroll::-webkit-scrollbar{display:none}
-.chapter{position:relative;min-height:0;overflow-anchor:auto;overflow:hidden;background:var(--page-bg,#f5f0e7)}
+.chapter{position:relative;min-height:0;overflow-anchor:none;overflow:hidden;background:var(--page-bg,#f5f0e7)}
 .chapter iframe{width:100%;display:block;border:0;overflow:hidden;background:transparent;touch-action:pan-y}
 .chapter.placeholder{background:var(--page-bg,#f5f0e7)}
 .chapter-gap{height:6px;background:var(--page-bg,#f5f0e7)}
@@ -89,7 +89,7 @@ function measure(item){
  const body=item.frame.contentDocument.body;
  if(!body)return;
  // Keep a chapter's measurement independent of its iframe viewport height.
- const height=body.scrollHeight+2;
+ const height=Math.max(body.scrollHeight,body.getBoundingClientRect().height)+2;
  if(Number.isFinite(height))setChapterHeight(item,height);
 }
 function scheduleMeasure(item){
