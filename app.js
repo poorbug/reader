@@ -199,7 +199,7 @@ async function importUrl(value,status){
   let title;try{title=decodeURIComponent(url.pathname.split('/').pop()||'online-book')}catch{title='online-book'}title=title.replace(/[\\/:*?"<>|]/g,'_');
   if(!/\.(epub|pdf|mobi)$/i.test(title))title+='.'+(isPDF?'pdf':isZip?'epub':'mobi');
   status.textContent='正在解析和保存到本机…';
-  return (await importFiles([new File([blob],title,{type:blob.type||'application/octet-stream'})],{silent:true,strict:true}))[0];
+  return (await importFiles([new File([blob],title,{type:blob.type||'application/octet-stream'})],{silent:true,strict:true,sourceUrl:url.href}))[0];
 }
 // Book share links are stateless: ?import=<encoded HTTPS download URL>.
 // Visiting the link adds the file to the EXISTING IndexedDB bookshelf.
@@ -262,6 +262,12 @@ async function importFiles(files,options={}){
    // duplicates when simultaneous imports or shared links race with UI refresh.
    const existing=(await all('books')).find(x=>x.hash===hash);
    if(existing){
+    // The same book may have been imported locally before. A successful
+    // HTTPS import can attach its public address without duplicating the book.
+    if(options.sourceUrl&&existing.sourceUrl!==options.sourceUrl){
+     existing.sourceUrl=options.sourceUrl;
+     await put('books',existing);
+    }
     results.push({state:'existing',bookId:existing.id,title:existing.title});
     if(!options.silent)toast('书架已有《'+existing.title+'》，不重复导入');
     continue;
@@ -285,7 +291,7 @@ async function importFiles(files,options={}){
    }
    const k=id(),book={
     id:k,hash,title:m.title||f.name.replace(/\.epub$/i,''),author:m.creator||'',
-    format,cover,status:'reading',percent:0,createdAt:now(),lastRead:now()
+    format,cover,sourceUrl:options.sourceUrl||null,status:'reading',percent:0,createdAt:now(),lastRead:now()
    };
    await put('files',{id:k,blob:new Blob([buf],{type:f.type||({
     epub:'application/epub+zip',pdf:'application/pdf',mobi:'application/x-mobipocket-ebook'
