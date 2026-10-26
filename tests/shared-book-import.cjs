@@ -29,13 +29,14 @@ async function dbRead(page,store){
  try{
   const ctx=await browser.newContext({...devices['iPhone 13'],serviceWorkers:'block'});
   const page=await ctx.newPage(),origin=process.env.BASE_URL||'http://127.0.0.1:8765/';
-  const fixtureA=await epub('原有书籍'),fixtureB=await epub('分享新书');
+  const fixtureA=await epub('原有书籍'),fixtureB=await epub('分享新书'),fixtureC=await epub('桌面版粘贴新书');
   const source='https://books.example.invalid/new-book.epub';
   const sameContentDifferentURL='https://books.example.invalid/copy.epub';
+  const clipboardSource='https://books.example.invalid/from-paste.epub';
   await page.route('https://books.example.invalid/**',route=>route.fulfill({
    status:200,contentType:'application/epub+zip',
    headers:{'access-control-allow-origin':'*'},
-   body:fixtureB
+   body:route.request().url()===clipboardSource?fixtureC:fixtureB
   }));
   await page.goto(origin,{waitUntil:'domcontentloaded'});
   await page.locator('#picker').setInputFiles({name:'old-book.epub',mimeType:'application/epub+zip',buffer:fixtureA});
@@ -66,6 +67,22 @@ async function dbRead(page,store){
   await page.goto(share(sameContentDifferentURL),{waitUntil:'domcontentloaded'});
   await page.getByText('没有重复添加。',{exact:false}).waitFor({timeout:30000});
   assert.equal((await dbRead(page,'books')).length,2,'identical file from another URL must deduplicate by SHA-256');
+  // An already installed/returning user's Paste Share Link flow must use
+  // the SAME IndexedDB shelf, and recognize both the shared app URL and the
+  // raw HTTPS ebook download URL.
+  await page.goto(origin,{waitUntil:'domcontentloaded'});
+  await page.locator('#add').click();
+  await page.locator('#epub-url').fill(share(clipboardSource));
+  await page.locator('#import-url').click();
+  await page.getByText('导入成功：桌面版粘贴新书',{exact:false}).waitFor({timeout:30000});
+  assert.equal((await dbRead(page,'books')).length,3,'pasting shared link should append a third book');
+  await page.locator('#add').click();
+  await page.locator('#epub-url').fill(clipboardSource);
+  await page.locator('#import-url').click();
+  await page.getByText('不重复导入',{exact:false}).waitFor({timeout:30000});
+  assert.equal((await dbRead(page,'books')).length,3,'direct download URL must dedupe against pasted share');
+  assert.equal((await dbRead(page,'progress'))[0]?.percent,0.43,'pasting must preserve earlier progress');
+  assert.equal((await dbRead(page,'highlights'))[0]?.note,'已有笔记','pasting must preserve earlier notes');
   console.log('PASS '+(process.env.BROWSER||'chromium')+' shared books append to shelf without duplicates');
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exitCode=1});
