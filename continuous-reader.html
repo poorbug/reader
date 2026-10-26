@@ -116,6 +116,44 @@ function resolveCFI(value){
   return {index,anchor:doc=>CFI.toRange(doc,parts)};
  }catch{return null}
 }
+// Recover older MOBI text notes saved before positional CFI support.
+// Only unique matches are accepted; ambiguous matches stay unlocated.
+function legacyMobiQuoteRange(doc,quote){
+ if(!doc?.body||!quote||quote.length<12||quote.length>350)return null;
+ const walker=doc.createTreeWalker(doc.body,NodeFilter.SHOW_TEXT);
+ const nodes=[];let text='',node;
+ while((node=walker.nextNode())&&text.length<700000){
+  if(node.parentElement?.closest('script,style,svg,[data-zhj-selection-overlay],[data-zj-note-layer]'))continue;
+  const value=node.nodeValue||'';if(!value)continue;
+  nodes.push({node,offset:text.length,length:value.length});text+=value;
+ }
+ const found=text.indexOf(quote);
+ if(found<0||text.indexOf(quote,found+1)!==-1)return null;
+ const last=found+quote.length;
+ const start=nodes.find(x=>x.offset<=found&&x.offset+x.length>found);
+ const end=nodes.find(x=>x.offset<last&&x.offset+x.length>=last);
+ if(!start||!end)return null;
+ try{
+  const range=doc.createRange();
+  range.setStart(start.node,found-start.offset);
+  range.setEnd(end.node,last-end.offset);
+  return range;
+ }catch{return null}
+}
+function locateLegacyMobiNotes(item){
+ if(activeBookFormat!=='mobi'||!CFI||!item?.frame?.contentDocument)return;
+ const doc=item.frame.contentDocument;
+ for(const note of records){
+  if(!note?.id||note.cfi)continue;
+  const range=legacyMobiQuoteRange(doc,note.text);
+  if(!range)continue;
+  const cfi=getSelectedCFI(item.index,range);
+  if(!cfi)continue;
+  note.cfi=cfi;
+  if(embedded)tell('MOBI_NOTE_LOCATED',{noteId:note.id,cfi});
+  else persist({notes:records});
+ }
+}
 function createUnderlines(item){
  const doc=item.frame?.contentDocument;
  if(!doc||item.state!=='ready')return;
@@ -201,8 +239,11 @@ function wireText(item,doc){
    const href=link.getAttribute('href');
    if(href&&href[0]==='#'){event.preventDefault();const target=doc.getElementById(href.slice(1));if(target)target.scrollIntoView();return}
    if(href&&!/^(https?:|mailto:|javascript:)/i.test(href)){
-    event.preventDefault();const url=book.sections[item.index].resolveHref?.(href);
-    if(url)goTo(book.resolveHref?.(url));return
+    event.preventDefault();
+    const sectionURL=book.sections[item.index].resolveHref?.(href)||href;
+    const destination=book.resolveHref?.(sectionURL);
+    if(destination)goTo(destination);
+    return
    }
    return;
   }
@@ -230,7 +271,7 @@ async function mount(item,gen){
   if(gen!==generation)return;
   const doc=iframe.contentDocument;if(!doc?.body)throw Error('无法访问章节正文');
   applyStyles(doc);
-  item.state='ready';wireText(item,doc);
+  item.state='ready';wireText(item,doc);locateLegacyMobiNotes(item);
   const observer=new ResizeObserver(()=>{measure(item);createUnderlines(item)});
   observer.observe(doc.documentElement);observer.observe(doc.body);
   item.observer=observer;
