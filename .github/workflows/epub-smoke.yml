@@ -50,3 +50,7 @@ jobs:
         run: node tests/note-tap-priority.cjs
       - name: Verify WebKit annotation tap priority
         run: BROWSER=webkit node tests/note-tap-priority.cjs
+      - name: Verify Chromium reading header book share
+        run: node tests/book-share.cjs
+      - name: Verify WebKit reading header book share
+        run: BROWSER=webkit node tests/book-share.cjs
