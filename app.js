@@ -126,7 +126,7 @@ function showImportOptions(){
   overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};
   overlay.querySelector('#import-close').onclick=()=>overlay.remove();
   overlay.querySelector('#import-local').onclick=()=>{overlay.remove();$('#picker').click()};
-  overlay.querySelector('#import-url').onclick=async()=>{let input=overlay.querySelector('#epub-url'),button=overlay.querySelector('#import-url'),status=overlay.querySelector('#import-status');button.disabled=true;status.textContent='正在下载…';try{await importUrl(input.value.trim(),status);overlay.remove()}catch(e){status.textContent=e.message;button.disabled=false}};
+  overlay.querySelector('#import-url').onclick=async()=>{let input=overlay.querySelector('#epub-url'),button=overlay.querySelector('#import-url'),status=overlay.querySelector('#import-status');button.disabled=true;status.textContent='正在下载…';try{const result=await importUrl(input.value.trim(),status);overlay.remove();toast(result?.state==='existing'?'书架已有《'+result.title+'》，不重复导入':'导入成功：'+(result?.title||'电子书'))}catch(e){status.textContent=e.message;button.disabled=false}};
   overlay.querySelector('#copy-share-link').onclick=async()=>{
    const input=overlay.querySelector('#epub-url'),status=overlay.querySelector('#import-status');
    try{
