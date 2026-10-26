@@ -41,10 +41,24 @@ async function dbRead(page,store){
   await page.locator('#picker').setInputFiles({name:'old-book.epub',mimeType:'application/epub+zip',buffer:fixtureA});
   await page.locator('[data-book]').first().waitFor({timeout:30000});
   assert.equal((await dbRead(page,'books')).length,1);
+  const original=(await dbRead(page,'books'))[0];
+  await page.evaluate(id=>new Promise((resolve,reject)=>{
+   const req=indexedDB.open('zhijian-reader',1);
+   req.onsuccess=()=>{
+    const db=req.result,tx=db.transaction(['progress','highlights'],'readwrite');
+    tx.objectStore('progress').put({bookId:id,cfi:'epubcfi(/6/2)',percent:0.43});
+    tx.objectStore('highlights').put({id:'existing-note',bookId:id,text:'此前保留的划线',note:'已有笔记'});
+    tx.oncomplete=()=>{db.close();resolve()};
+    tx.onerror=()=>reject(tx.error);
+   };
+   req.onerror=()=>reject(req.error);
+  }),original.id);
   const share=url=>origin+'?import='+encodeURIComponent(url);
   await page.goto(share(source),{waitUntil:'domcontentloaded'});
   await page.getByText('已加入书架，原有书籍和笔记都已保留。',{exact:false}).waitFor({timeout:30000});
   assert.equal((await dbRead(page,'books')).length,2,'shared book must append to existing shelf');
+  assert.equal((await dbRead(page,'progress'))[0]?.percent,0.43,'existing reading progress must remain');
+  assert.equal((await dbRead(page,'highlights'))[0]?.text,'此前保留的划线','existing notes must remain');
   assert.equal(new URL(page.url()).searchParams.has('import'),false,'successful import should clear query');
   await page.goto(share(source),{waitUntil:'domcontentloaded'});
   await page.getByText('没有重复添加。',{exact:false}).waitFor({timeout:30000});
