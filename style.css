@@ -260,3 +260,33 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .immersive-reader .reader-edge-toggle{position:absolute;right:0;top:46%;z-index:38;width:30px;height:54px;border:0;border-radius:10px 0 0 10px;background:rgba(61,105,91,.78);color:#fff;font-size:17px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;box-shadow:0 2px 10px #0002}
 .immersive-reader .reader-edge-toggle[hidden]{display:none}
 .immersive-reader.chrome-visible .reader-edge-toggle{opacity:.45}
+
+
+/* v1.0.58 — shareable quote card, dark bookish palette based on reference. */
+.note-share-overlay{
+ position:fixed;inset:0;z-index:500;
+ background:rgba(9,13,12,.72);
+ display:flex;align-items:center;justify-content:center;
+ padding:max(14px,env(safe-area-inset-top,0px)) 15px max(14px,env(safe-area-inset-bottom,0px));
+ box-sizing:border-box;
+}
+.note-share-sheet{
+ box-sizing:border-box;width:min(100%,510px);max-height:95dvh;
+ overflow-y:auto;-webkit-overflow-scrolling:touch;
+ background:#f8f6ef;color:#26392f;border-radius:16px;
+ padding:15px 16px 19px;box-shadow:0 16px 52px #0005;
+}
+.note-share-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}
+.note-share-head strong{font-size:17px;font-weight:650}
+.note-share-close{background:transparent;border:0;color:#65746a;font-size:28px;line-height:1;padding:2px 7px}
+.note-share-preview{display:flex;justify-content:center;align-items:center;min-height:140px;background:#1c1e23;overflow:hidden}
+.note-share-preview img{display:block;max-width:100%;width:auto;max-height:min(60dvh,660px);height:auto;object-fit:contain}
+.note-share-preview img[hidden]{display:none}
+.note-share-loading{color:#dfd1ab;text-align:center;padding:30px 10px;font-size:14px}
+.note-share-loading[hidden]{display:none}
+.note-share-hint{color:#758277;margin:12px 0;font-size:12px;line-height:1.5}
+.note-share-controls{display:flex;gap:10px}
+.note-share-controls .btn{flex:1;min-width:0;text-align:center;font-size:14px;padding:11px 8px}
+.note-share-controls .btn:disabled{opacity:.5;cursor:wait}
+.book-note-actions{flex-wrap:wrap}
+@media(max-height:680px){.note-share-preview img{max-height:47dvh}.note-share-sheet{max-height:92dvh}}
