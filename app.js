@@ -161,10 +161,63 @@ async function importUrl(value,status){
   let title;try{title=decodeURIComponent(url.pathname.split('/').pop()||'online-book')}catch{title='online-book'}title=title.replace(/[\\/:*?"<>|]/g,'_');
   if(!/\.(epub|pdf|mobi)$/i.test(title))title+='.'+(isPDF?'pdf':isZip?'epub':'mobi');
   status.textContent='正在解析和保存到本机…';
-  await importFiles([new File([blob],title,{type:blob.type||'application/octet-stream'})]);
+  return (await importFiles([new File([blob],title,{type:blob.type||'application/octet-stream'})],{silent:true,strict:true}))[0];
 }
 async function digest(buf){let a=new Uint8Array(await crypto.subtle.digest('SHA-256',buf));return [...a].map(x=>x.toString(16).padStart(2,'0')).join('')}
-async function importFiles(files){for(const f of files){try{if(!/\.(epub|pdf|mobi)$/i.test(f.name)){toast('当前支持 EPUB、PDF、MOBI');continue}toast('正在导入 '+f.name);let buf=await f.arrayBuffer(),hash=await digest(buf);if(books.some(x=>x.hash===hash)){toast('这本书已经导入');continue}let format=f.name.split('.').pop().toLowerCase(),m={title:f.name.replace(/\.(epub|pdf|mobi)$/i,''),creator:''},cover=null,instance=null;if(format==='epub'){if(typeof ePub==='undefined')throw Error('EPUB 引擎未加载');instance=ePub(buf);await instance.ready;m=await instance.loaded.metadata;try{let url=await instance.coverUrl();if(url){let b=await(await fetch(url)).blob();if(b.size<2000000)cover=await new Promise(r=>{let fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b)})}}catch{}}else if(format==='pdf'){const h=new TextDecoder().decode(buf.slice(0,5));if(h!=='%PDF-')throw Error('不是有效的 PDF 文件')}else if(format==='mobi'){let bytes=new Uint8Array(buf);if(new TextDecoder().decode(bytes.slice(60,68))!=='BOOKMOBI')throw Error('不是标准 MOBI 文件或文件已加密')}let k=id(),book={id:k,hash,title:m.title||f.name.replace(/\.epub$/i,''),author:m.creator||'',format,cover,status:'reading',percent:0,createdAt:now(),lastRead:now()};await put('files',{id:k,blob:new Blob([buf],{type:f.type||({epub:'application/epub+zip',pdf:'application/pdf',mobi:'application/x-mobipocket-ebook'}[format])}),name:f.name});await put('books',book);instance?.destroy();toast('导入成功：'+book.title)}catch(e){console.error(e);toast('导入失败：'+e.message)}}await refresh()}
+async function importFiles(files,options={}){
+ const results=[];
+ for(const f of Array.from(files||[])){
+  let instance=null;
+  try{
+   if(!/\.(epub|pdf|mobi)$/i.test(f.name))throw Error('当前支持 EPUB、PDF、MOBI');
+   if(!options.silent)toast('正在导入 '+f.name);
+   const buf=await f.arrayBuffer(),hash=await digest(buf);
+   // Check IndexedDB itself, not just the last rendered bookshelf, to prevent
+   // duplicates when simultaneous imports or shared links race with UI refresh.
+   const existing=(await all('books')).find(x=>x.hash===hash);
+   if(existing){
+    results.push({state:'existing',bookId:existing.id,title:existing.title});
+    if(!options.silent)toast('书架已有《'+existing.title+'》，不重复导入');
+    continue;
+   }
+   const format=f.name.split('.').pop().toLowerCase();
+   let m={title:f.name.replace(/\.(epub|pdf|mobi)$/i,''),creator:''},cover=null;
+   if(format==='epub'){
+    if(typeof ePub==='undefined')throw Error('EPUB 解析组件尚未加载，请联网刷新');
+    instance=ePub(buf);await instance.ready;
+    m=await instance.loaded.metadata;
+    try{
+     const url=await instance.coverUrl();
+     if(url){const image=await(await fetch(url)).blob();if(image.size<2000000)cover=await new Promise(resolve=>{
+      const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.readAsDataURL(image);
+     })}
+    }catch(error){console.warn('EPUB 封面读取失败',error)}
+   }else if(format==='pdf'){
+    if(new TextDecoder().decode(buf.slice(0,5))!=='%PDF-')throw Error('不是有效的 PDF 文件');
+   }else if(format==='mobi'){
+    if(new TextDecoder().decode(new Uint8Array(buf).slice(60,68))!=='BOOKMOBI')throw Error('不是标准 MOBI 文件或文件已加密');
+   }
+   const k=id(),book={
+    id:k,hash,title:m.title||f.name.replace(/\.epub$/i,''),author:m.creator||'',
+    format,cover,status:'reading',percent:0,createdAt:now(),lastRead:now()
+   };
+   await put('files',{id:k,blob:new Blob([buf],{type:f.type||({
+    epub:'application/epub+zip',pdf:'application/pdf',mobi:'application/x-mobipocket-ebook'
+   }[format])}),name:f.name});
+   try{await put('books',book)}
+   catch(error){await del('files',k).catch(()=>{});throw error}
+   results.push({state:'added',bookId:k,title:book.title});
+   if(!options.silent)toast('导入成功：'+book.title);
+  }catch(error){
+   console.error('电子书导入失败',error);
+   if(options.strict)throw error;
+   results.push({state:'error',message:error.message});
+   if(!options.silent)toast('导入失败：'+error.message);
+  }finally{try{instance?.destroy()}catch{}}
+ }
+ await refresh();
+ return results;
+}
 function closeBookMenu(){document.querySelector('#book-action-menu')?.remove();document.querySelector('#book-action-dismiss')?.remove()}
 function showBookMenu(k,cover){
  const b=books.find(x=>x.id===k);if(!b)return;
