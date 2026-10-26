@@ -284,7 +284,6 @@ button,.btn,.tab,.nav,.book,.cover{touch-action:manipulation}
 .note-share-preview img[hidden]{display:none}
 .note-share-loading{color:#dfd1ab;text-align:center;padding:30px 10px;font-size:14px}
 .note-share-loading[hidden]{display:none}
-.note-share-hint{color:#758277;margin:12px 0;font-size:12px;line-height:1.5}
 .note-share-controls{display:flex;gap:10px}
 .note-share-controls .btn{flex:1;min-width:0;text-align:center;font-size:14px;padding:11px 8px}
 .note-share-controls .btn:disabled{opacity:.5;cursor:wait}
