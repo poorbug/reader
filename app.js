@@ -187,7 +187,7 @@ async function handleSharedImportLink(){
  const source=new URLSearchParams(location.search).get('import');
  if(source===null||sharedImportRunning)return;
  sharedImportRunning=true;
- view='shelf';tab='reading';
+ view='shelf';tab='all';
  if(!active)render();
  document.querySelector('#shared-book-status')?.remove();
  const banner=document.createElement('aside');
@@ -203,7 +203,7 @@ async function handleSharedImportLink(){
   if(!result||!['added','existing'].includes(result.state))throw Error('未能保存电子书');
   // Once imported, refresh won't repeat the download. Other query params are retained.
   removeSharedImportQuery();
-  view='shelf';tab='reading';
+  view='shelf';tab='all';
   await refresh();
   message.textContent=result.state==='added'
     ?'《'+result.title+'》已加入书架，原有书籍和笔记都已保留。'
