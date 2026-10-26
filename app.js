@@ -163,6 +163,54 @@ async function importUrl(value,status){
   status.textContent='正在解析和保存到本机…';
   return (await importFiles([new File([blob],title,{type:blob.type||'application/octet-stream'})],{silent:true,strict:true}))[0];
 }
+// Book share links are stateless: ?import=<encoded HTTPS download URL>.
+// Visiting the link adds the file to the EXISTING IndexedDB bookshelf.
+// Content hashes, not titles or URLs, determine whether a book is already present.
+let sharedImportRunning=false;
+function removeSharedImportQuery(){
+ const url=new URL(location.href);
+ if(!url.searchParams.has('import'))return;
+ url.searchParams.delete('import');
+ history.replaceState(history.state,'',url.pathname+url.search+url.hash);
+}
+async function handleSharedImportLink(){
+ const source=new URLSearchParams(location.search).get('import');
+ if(source===null||sharedImportRunning)return;
+ sharedImportRunning=true;
+ view='shelf';tab='reading';
+ if(!active)render();
+ document.querySelector('#shared-book-status')?.remove();
+ const banner=document.createElement('aside');
+ banner.id='shared-book-status';
+ banner.setAttribute('role','status');banner.setAttribute('aria-live','polite');
+ banner.style.cssText='position:fixed;z-index:9999;top:calc(env(safe-area-inset-top,0px) + 12px);left:12px;right:12px;max-width:480px;margin:0 auto;padding:14px 16px;border-radius:14px;background:#f6f2e9;color:#2b4539;box-shadow:0 5px 22px #0003;font-size:14px;line-height:1.5;';
+ const message=document.createElement('div');
+ message.textContent='正在下载分享的电子书并加入书架…';
+ banner.append(message);document.body.append(banner);
+ const dismiss=()=>banner.remove();
+ try{
+  const result=await importUrl(source,message);
+  if(!result||!['added','existing'].includes(result.state))throw Error('未能保存电子书');
+  // Once imported, refresh won't repeat the download. Other query params are retained.
+  removeSharedImportQuery();
+  view='shelf';tab='reading';
+  await refresh();
+  message.textContent=result.state==='added'
+    ?'《'+result.title+'》已加入书架，原有书籍和笔记都已保留。'
+    :'书架里已经有《'+result.title+'》，没有重复添加。';
+  setTimeout(dismiss,6000);
+ }catch(error){
+  console.error('共享链接导入失败',error);
+  message.textContent='分享的电子书导入失败：'+(error?.message||'未知错误');
+  const retry=document.createElement('button');retry.textContent='重试';
+  retry.style.cssText='margin:8px 12px 0 0;padding:7px 13px;border:0;border-radius:7px;color:white;background:#427b67;';
+  const close=document.createElement('button');close.textContent='关闭';
+  close.style.cssText='padding:7px 13px;border:0;background:none;color:#427b67;';
+  retry.onclick=()=>{banner.remove();sharedImportRunning=false;handleSharedImportLink()};
+  close.onclick=dismiss;
+  banner.append(retry,close);
+ }finally{sharedImportRunning=false}
+}
 async function digest(buf){let a=new Uint8Array(await crypto.subtle.digest('SHA-256',buf));return [...a].map(x=>x.toString(16).padStart(2,'0')).join('')}
 async function importFiles(files,options={}){
  const results=[];
@@ -718,4 +766,4 @@ async function notesPage(){
 }
 async function backup(){try{let out={version:1,createdAt:now(),books:await all('books'),progress:await all('progress'),highlights:await all('highlights'),bookmarks:await all('bookmarks'),files:[]};for(let f of await all('files')){let bytes=new Uint8Array(await f.blob.arrayBuffer()),str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));out.files.push({id:f.id,name:f.name,base64:btoa(str)})}let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));a.download='zhijian-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000);toast('请将备份保存到安全位置')}catch(e){toast('备份失败：'+e.message)}}
 async function restore(file){if(!file)return;try{let d=JSON.parse(await file.text());if(d.version!==1||!Array.isArray(d.books)||!Array.isArray(d.files))throw Error('备份格式不正确');if(!confirm('恢复 '+d.books.length+' 本书？相同 ID 数据将覆盖'))return;for(let f of d.files){let raw=atob(f.base64),bytes=Uint8Array.from(raw,x=>x.charCodeAt(0));await put('files',{id:f.id,name:f.name,blob:new Blob([bytes],{type:({pdf:'application/pdf',mobi:'application/x-mobipocket-ebook',epub:'application/epub+zip'}[(d.books.find(b=>b.id===f.id)?.format)||'epub'])})})}for(let b of d.books)await put('books',b);for(let store of ['progress','highlights','bookmarks'])for(let row of d[store]||[])await put(store,row);view='shelf';toast('备份已恢复');await refresh()}catch(e){toast('恢复失败：'+e.message)}}
-(async()=>{try{db=await openDb();await refresh();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn)}catch(e){app.textContent='数据库初始化失败：'+e.message}})();
+(async()=>{try{db=await openDb();await refresh();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);await handleSharedImportLink()}catch(e){app.textContent='数据库初始化失败：'+e.message}})();
