@@ -316,7 +316,7 @@ async function openFile(file,options={}){
   const item=items[current];if(item.state!=='ready')await new Promise(resolve=>{item.onReady.push(resolve);mount(item,gen)});
   if(item.state!=='ready')throw Error('无法加载初始章节');
   root.scrollTop=item.el.offsetTop+(saved?.fraction||0)*Math.max(0,item.height-root.clientHeight);
-  if(cfiTarget?.anchor){try{const anchor=cfiTarget.anchor(item.frame.contentDocument);let y=0;if(typeof anchor==='number')y=anchor*item.height;else if(anchor?.getBoundingClientRect)y=anchor.getBoundingClientRect().top;root.scrollTop=item.el.offsetTop+y}catch(error){console.warn('Restore CFI failed',error)}}
+  if(cfiTarget?.anchor&&(options.restoreExact||!Number.isFinite(options.sectionFraction))){try{const anchor=cfiTarget.anchor(item.frame.contentDocument);let y=0;if(typeof anchor==='number')y=anchor*item.height;else if(anchor?.getBoundingClientRect)y=anchor.getBoundingClientRect().top;root.scrollTop=item.el.offsetTop+y}catch(error){console.warn('Restore CFI failed',error)}}
   restoring=false;updateActive();
   $('#status').textContent=(book.metadata?.title||file.name)+' · '+book.sections.length+' 章 · 多章节连续滚动';
   logger('已加载 '+book.sections.length+' 个章节占位，实际同时保留最多 '+MAX_ACTIVE+' 个章节');
