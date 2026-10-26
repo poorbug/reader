@@ -86,7 +86,13 @@ const assert=require('node:assert/strict');
   await page.reload({waitUntil:'domcontentloaded'});
   await page.locator('[data-nav="notes"]').click();
   await page.locator('[data-note-book="share-fixture"]').click();
-  await page.evaluate(()=>{window.__noteQRDestination=null});
+  await page.evaluate(()=>{
+   const Base=window.QRCode;
+   function Spy(host,settings){window.__noteQRDestination=settings.text;return new Base(host,settings)}
+   Spy.CorrectLevel=Base.CorrectLevel;
+   window.QRCode=Spy;
+   window.__noteQRDestination=null;
+  });
   await page.locator('[data-note-act="share"]').first().click();
   await page.waitForFunction(()=>document.querySelector('.note-share-preview img')?.naturalWidth>0,{timeout:20000});
   assert.equal(await page.locator('.note-share-source-missing').isVisible(),true);
