@@ -34,3 +34,7 @@ jobs:
         run: node tests/continuous-scroll.cjs
       - name: Verify WebKit seamless chapter scrolling
         run: BROWSER=webkit node tests/continuous-scroll.cjs
+      - name: Verify Chromium production EPUB continuous reader
+        run: node tests/continuous-production.cjs
+      - name: Verify WebKit production EPUB continuous reader
+        run: BROWSER=webkit node tests/continuous-production.cjs
