@@ -473,7 +473,12 @@ $('#load-url').onclick=async()=>{
  }catch(e){$('#status').textContent='地址导入失败：'+e.message}
  finally{btn.disabled=false}
 };
-$('#scroll').addEventListener('scroll',()=>{lastScrollAt=Date.now();scheduleActive();scheduleIdleMaintenance();if(embedded)tell('READER_SCROLL')},{passive:true});
+// Only a genuine gesture should dismiss reader chrome. Layout compensation,
+// late font loading and scroll restoration also fire 'scroll' events.
+let userScrollGestureUntil=0;
+$('#scroll').addEventListener('touchmove',()=>{userScrollGestureUntil=Date.now()+500},{passive:true});
+$('#scroll').addEventListener('wheel',()=>{userScrollGestureUntil=Date.now()+500},{passive:true});
+$('#scroll').addEventListener('scroll',()=>{lastScrollAt=Date.now();scheduleActive();scheduleIdleMaintenance();if(embedded&&Date.now()<userScrollGestureUntil)tell('READER_SCROLL')},{passive:true});
 $('#toc').onclick=()=>renderPanel('toc');$('#notes').onclick=()=>renderPanel('notes');
 $('#panel-close').onclick=()=>$('#panel').classList.remove('visible');
 $('#hide').onclick=()=>$('#toolbar').classList.remove('visible');
