@@ -155,10 +155,28 @@ function locateLegacyMobiNotes(doc,index){
 }
 // Foliate uses a shadow-DOM scrolling surface outside the chapter iframe.
 // Short chapters leave most of the viewport on that surface, not in doc.
-let lastReaderTap=0;
+let lastReaderTap=0,lastInlineNoteTap=0,lastInlineNoteId=null;
+function showInlineMobiNote(note){
+ if(!note?.id)return false;
+ const now=Date.now();
+ // A touchend and its synthetic click must open only one note action sheet.
+ if(lastInlineNoteId!==note.id||now-lastInlineNoteTap>650){
+  lastInlineNoteTap=now;lastInlineNoteId=note.id;
+  parent.postMessage({type:'MOBI_INLINE_NOTE',noteId:note.id},location.origin);
+ }
+ return true;
+}
+function mobiNoteAt(doc,x,y){
+ if(!Number.isFinite(x)||!Number.isFinite(y))return null;
+ try{
+  const section=view?.renderer?.getContents()?.find(item=>item.doc===doc);
+  const [cfi]=section?.overlayer?.hitTest({x,y})||[];
+  return cfi?[...noteMap.values()].find(note=>note.cfi===cfi)||null:null;
+ }catch{return null}
+}
 function sendReaderTap(){
  const now=Date.now();
- if(now-lastReaderTap<450)return;
+ if(now-lastInlineNoteTap<850||now-lastReaderTap<450)return;
  lastReaderTap=now;
  parent.postMessage({type:'READER_TAP'},location.origin);
 }
@@ -226,7 +244,8 @@ function wireTouch(doc){
  doc.body.style.touchAction='pan-y';
  let tapStartX=0,tapStartY=0,tapStartTime=0;
  doc.addEventListener('touchstart',ev=>{if(ev.touches.length!==1)return;tapStartX=ev.touches[0].clientX;tapStartY=ev.touches[0].clientY;tapStartTime=Date.now()},{passive:true});
- doc.addEventListener('touchend',ev=>{if(!ev.changedTouches.length||Date.now()-tapStartTime>350)return;const t=ev.changedTouches[0];if(Math.abs(t.clientX-tapStartX)>12||Math.abs(t.clientY-tapStartY)>12)return;if(doc.__zhijianSelecting||doc.__zhijianSelectionActive)return;sendReaderTap()},{passive:true});
+ doc.addEventListener('touchend',ev=>{if(!ev.changedTouches.length||Date.now()-tapStartTime>350)return;const t=ev.changedTouches[0];if(Math.abs(t.clientX-tapStartX)>12||Math.abs(t.clientY-tapStartY)>12)return;if(doc.__zhijianSelecting||doc.__zhijianSelectionActive)return;if(showInlineMobiNote(mobiNoteAt(doc,t.clientX,t.clientY))){ev.preventDefault();return}sendReaderTap()},{passive:false});
+ doc.addEventListener('click',ev=>{if(showInlineMobiNote(mobiNoteAt(doc,ev.clientX,ev.clientY))){ev.preventDefault();ev.stopImmediatePropagation()}},{capture:true});
  let startY=0,edge=false,atStartOnTouch=false,backHandled=false;
  doc.addEventListener('touchstart',e=>{
   if(e.touches.length!==1)return;
@@ -282,7 +301,7 @@ window.addEventListener('message',async e=>{
   view.addEventListener('draw-annotation',event=>{try{event.detail.draw(underlinedRects)}catch(err){console.warn(err)}});
   view.addEventListener('show-annotation',event=>{
    const note=[...noteMap.values()].find(h=>h.cfi===event.detail?.value);
-   if(note)parent.postMessage({type:'MOBI_INLINE_NOTE',noteId:note.id},location.origin);
+   if(note)showInlineMobiNote(note);
   });
   view.renderer.addEventListener('load',event=>{
    wireTouch(event.detail?.doc);
