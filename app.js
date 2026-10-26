@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION='1.0.59';
+const APP_VERSION='1.0.60';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='reading',view='shelf',notesGroupBookId=null,active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
@@ -499,7 +499,7 @@ async function openInlineNoteActions(noteId){
  backdrop.addEventListener('click',e=>{e.stopPropagation();markAnnotationTap();closeInlineNoteActions()});
  backdrop.addEventListener('touchend',e=>e.stopPropagation(),{passive:true});
  const card=document.createElement('div');card.id='inline-note-actions';card.className='inline-note-actions';card.setAttribute('role','dialog');card.setAttribute('aria-label','笔记操作');
- card.innerHTML='<div class="inline-note-header"><strong>'+(note.note?.trim()?'这段文字的笔记':'这段文字的划线')+'</strong><button type="button" class="inline-note-dismiss" aria-label="关闭">×</button></div><blockquote class="inline-note-excerpt">'+esc(note.text||'')+'</blockquote><div class="inline-note-content">'+esc(note.note||'（暂无笔记，点击编辑可以添加）')+'</div><div class="inline-note-buttons"><button type="button" data-action="share">分享图</button><button type="button" data-action="edit">'+(note.note?.trim()?'编辑笔记':'添加笔记')+'</button><button type="button" data-action="delete">'+(note.note?.trim()?'删除笔记':'删除划线')+'</button></div>';
+ card.innerHTML='<div class="inline-note-header"><strong>'+(note.note?.trim()?'这段文字的笔记':'这段文字的划线')+'</strong><button type="button" class="inline-note-dismiss" aria-label="关闭">×</button></div><blockquote class="inline-note-excerpt">'+esc(note.text||'')+'</blockquote><div class="inline-note-content">'+esc(note.note||'（暂无笔记，点击编辑可以添加）')+'</div><div class="inline-note-buttons"><button type="button" data-action="share">分享笔记</button><button type="button" data-action="edit">'+(note.note?.trim()?'编辑笔记':'添加笔记')+'</button><button type="button" data-action="delete">'+(note.note?.trim()?'删除笔记':'删除划线')+'</button></div>';
  $('#reader')?.append(backdrop,card);
  card.querySelector('.inline-note-dismiss').onclick=closeInlineNoteActions;
  card.querySelector('[data-action="share"]').onclick=()=>{closeInlineNoteActions();window.ZhijianNoteShare?.open(note,active)};
@@ -544,7 +544,7 @@ async function renderBookNotes(bookId){
  p.innerHTML='<div class="setting-title">本书的划线与笔记</div><p class="book-note-count">'+notes.length+' 条记录，保存在当前设备</p><div class="book-note-list">'+(notes.length?notes.map(h=>{
   const located=!!h.cfi&&['epub','mobi'].includes(active.format||'epub');
   const date=h.createdAt?new Date(h.createdAt).toLocaleDateString('zh-CN'):'';
-  return '<article class="book-note-card" data-note-id="'+esc(h.id)+'"><div class="book-note-meta"><span>'+(h.note?'笔记':'划线')+'</span><time>'+esc(date)+'</time></div><blockquote class="book-note-quote">'+esc(h.text||'（未保存文字）')+'</blockquote>'+(h.note?'<div class="book-note-comment">'+esc(h.note)+'</div>':'')+'<div class="book-note-actions">'+(located?'<button class="book-note-action" data-act="jump">回到原文</button>':'<span class="book-note-unlocated">暂不支持定位</span>')+'<button class="book-note-action" data-act="share">生成分享图</button><button class="book-note-action" data-act="edit">编辑</button><button class="book-note-action" data-act="delete">删除</button></div></article>';
+  return '<article class="book-note-card" data-note-id="'+esc(h.id)+'"><div class="book-note-meta"><span>'+(h.note?'笔记':'划线')+'</span><time>'+esc(date)+'</time></div><blockquote class="book-note-quote">'+esc(h.text||'（未保存文字）')+'</blockquote>'+(h.note?'<div class="book-note-comment">'+esc(h.note)+'</div>':'')+'<div class="book-note-actions">'+(located?'<button class="book-note-action" data-act="jump">回到原文</button>':'<span class="book-note-unlocated">暂不支持定位</span>')+'<button class="book-note-action" data-act="share">分享笔记</button><button class="book-note-action" data-act="edit">编辑</button><button class="book-note-action" data-act="delete">删除</button></div></article>';
  }).join(''):'<div class="book-note-empty">还没有划线或笔记。<br>在正文中长按选中文字，即可添加。</div>')+'</div>';
  p.scrollTop=scroll;
  p.querySelectorAll('[data-note-id]').forEach(card=>{
@@ -780,7 +780,7 @@ async function notesPage(){
    '<blockquote class="note">'+esc(h.text||'')+'</blockquote>'+
    (h.note?'<p class="note-text">'+esc(h.note)+'</p>':'')+
    '<div class="actions">'+(h.cfi?'<button class="btn ghost small" data-note-act="go">回到原文</button>':'')+
-   '<button class="btn ghost small" data-note-act="share">生成分享图</button><button class="btn ghost small" data-note-act="edit">编辑</button>'+
+   '<button class="btn ghost small" data-note-act="share">分享笔记</button><button class="btn ghost small" data-note-act="edit">编辑</button>'+
    '<button class="btn ghost small" data-note-act="del">删除</button></div></article>';
  }).join(''):'<div class="empty">这本书还没有笔记。<br>点击左上方可以返回书籍列表。</div>'));
  $('#notes-back').onclick=()=>{notesGroupBookId=null;notesPage()};
