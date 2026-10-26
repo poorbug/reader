@@ -13,9 +13,9 @@
 #surface{position:relative;flex:1;min-height:0}
 #reader-loading{position:absolute;inset:0;z-index:16;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:24px;text-align:center;background:#f5f0e7;color:#30443a;font-size:15px;line-height:1.6;pointer-events:none}
 #reader-loading[hidden]{display:none}
-#scroll{position:relative;height:100%;overflow:auto;overflow-anchor:none;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#scroll{position:relative;height:100%;overflow:auto;overflow-anchor:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 #scroll::-webkit-scrollbar{display:none}
-.chapter{position:relative;min-height:0;overflow-anchor:none;overflow:hidden;background:var(--page-bg,#f5f0e7)}
+.chapter{position:relative;min-height:0;overflow-anchor:auto;overflow:hidden;background:var(--page-bg,#f5f0e7)}
 .chapter iframe{width:100%;display:block;border:0;overflow:hidden;background:transparent;touch-action:pan-y}
 .chapter.placeholder{background:var(--page-bg,#f5f0e7)}
 .chapter-gap{height:6px;background:var(--page-bg,#f5f0e7)}
@@ -67,58 +67,28 @@ function hidePanels(){$('#toolbar').classList.remove('visible');$('#panel').clas
 function toggleTools(){if(selected?.text)return;const time=Date.now();if(time-lastTap<550)return;lastTap=time;if(embedded)tell('READER_TAP');else $('#toolbar').classList.toggle('visible')}
 function clearSelection(){const controller=selectionControl;selectionControl=null;selected=null;$('#selection-tools').classList.remove('visible');controller?.clear();if(embedded)tell('ZHJ_SELECTION',{text:'',cfi:null})}
 async function hashFile(file){const bytes=await file.arrayBuffer();const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));return [Array.from(hash,x=>x.toString(16).padStart(2,'0')).join(''),bytes]}
-// Defer height corrections above the viewport until native momentum scrolling stops.
+// Chapter boundary stability: never write scrollTop from asynchronous layout.
+// Native scroll anchoring maintains the user's position when earlier chapters resize.
 function scheduleIdleMaintenance(){
  clearTimeout(settleTimer);
  settleTimer=setTimeout(()=>{
   if(Date.now()-lastScrollAt<SCROLL_IDLE_MS){scheduleIdleMaintenance();return}
   if(!book||restoring)return;
-  // Do not apply deferred height corrections in a loop. Every scrollTop
-  // correction emits a new scroll event, restarting the idle timer and causing
-  // a self-sustaining slow scroll on some mobile browsers.
-  const pending=items.filter(item=>item.pendingHeight!==null);
-  if(pending.length){
-   const scroller=$('#scroll'),oldPosition=scroller.scrollTop;
-   let correction=0;
-   for(const item of pending){
-    const height=item.pendingHeight;item.pendingHeight=null;
-    const old=item.height;
-    if(Math.abs(height-old)<2)continue;
-    if(item.el.offsetTop+old<=oldPosition+1)correction+=height-old;
-    item.height=height;item.el.style.height=height+'px';
-    item.frame?.style.setProperty('height',height+'px');
-   }
-   if(correction)scroller.scrollTop=oldPosition+correction;
-  }
   pruneChapters();
  },SCROLL_IDLE_MS);
 }
-function setChapterHeight(item,newHeight,afterScroll=false){
+function setChapterHeight(item,newHeight){
  const height=Math.max(20,Math.ceil(newHeight));
- const old=item.height;
- if(Math.abs(height-old)<2){item.pendingHeight=null;return}
- const scroller=$('#scroll');
- const top=item.el.offsetTop,oldBottom=top+old;
- const compensate=!restoring&&oldBottom<=scroller.scrollTop+1;
- if(compensate&&!afterScroll&&Date.now()-lastScrollAt<SCROLL_IDLE_MS){
-  item.pendingHeight=height;scheduleIdleMaintenance();return;
- }
- item.pendingHeight=null;
- const previousScroll=scroller.scrollTop;
+ if(Math.abs(height-item.height)<2)return;
  item.height=height;
  item.el.style.height=height+'px';
  item.frame?.style.setProperty('height',height+'px');
- // Only compensate when the change actually precedes the visible content.
- // Keep the DOM mutation and correction in one synchronous turn.
- if(compensate&&Math.abs(height-old)>=2)scroller.scrollTop=previousScroll+(height-old);
 }
 function measure(item){
  if(item.state!=='ready'||!item.frame?.contentDocument)return;
  const body=item.frame.contentDocument.body;
  if(!body)return;
- // The iframe viewport may exceed short content; do not observe its own root.
- // scrollHeight already represents the content; getBoundingClientRect().height
- // can grow with the iframe viewport and feed back into our own measurement.
+ // Keep a chapter's measurement independent of its iframe viewport height.
  const height=body.scrollHeight+2;
  if(Number.isFinite(height))setChapterHeight(item,height);
 }
