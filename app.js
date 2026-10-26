@@ -40,10 +40,10 @@ async function showInstallGuide(){
  const overlay=document.createElement('div');overlay.id='install-guide';overlay.className='install-guide-overlay';
  overlay.setAttribute('role','presentation');
  const ios=isiOS(),wechat=isWeChatIOS();
- // Keep the original location (including ?book=...) when guiding people out of WeChat.
+ // Keep the original location (including ?import=...) when guiding people out of WeChat.
  const address=location.href;
  const guide=wechat
-  ?'<p>你正在微信中打开「纸间」。想安装到 iPhone 桌面，需要先在 Safari 打开。</p><ol><li>点击微信页面右上角的<strong>···</strong>。</li><li>在菜单中选择<strong>在浏览器打开</strong>或<strong>在 Safari 中打开</strong>（名称可能随微信版本变化）。</li><li>确认打开的是 <strong>Safari</strong>；然后点击 Safari 的<strong>分享</strong>按钮，选择<strong>添加到主屏幕</strong>。</li></ol><p class="install-guide-tip">请保留原始分享链接的完整地址，包括 ?book= 参数。微信不能直接安装 PWA，菜单中也不一定提供 Safari 选项。</p><button type="button" class="btn ghost install-copy-link">复制当前完整链接</button>'
+  ?'<p>你正在微信中打开「纸间」。想安装到 iPhone 桌面，需要先在 Safari 打开。</p><ol><li>点击微信页面右上角的<strong>···</strong>。</li><li>在菜单中选择<strong>在浏览器打开</strong>或<strong>在 Safari 中打开</strong>（名称可能随微信版本变化）。</li><li>确认打开的是 <strong>Safari</strong>；然后点击 Safari 的<strong>分享</strong>按钮，选择<strong>添加到主屏幕</strong>。</li></ol><p class="install-guide-tip">请保留原始分享链接的完整地址，包括 ?import= 参数。微信不能直接安装 PWA，菜单中也不一定提供 Safari 选项。</p><button type="button" class="btn ghost install-copy-link">复制当前完整链接</button>'
   :ios
    ?'<p>通过 Safari 添加「纸间」到 iPhone 主屏幕：</p><ol><li>点击 Safari 的<strong>分享</strong>按钮（方框向上箭头）。</li><li>选择<strong>添加到主屏幕</strong>，然后确认<strong>添加</strong>。</li></ol><p class="install-guide-tip">如果此页面不是 Safari，请先在 Safari 打开。安装后的书籍数据与 Safari 分开存储。</p>'
    :'<p>请打开浏览器菜单，选择<strong>安装应用</strong>或<strong>添加到主屏幕</strong>。如果浏览器支持一键安装，可直接确认。</p>';
@@ -121,12 +121,22 @@ async function checkForAppUpdates(){
 function showImportOptions(){
   document.querySelector('#import-dialog')?.remove();
   let overlay=document.createElement('div');overlay.id='import-dialog';overlay.className='import-overlay';
-  overlay.innerHTML='<div class="import-modal" role="dialog" aria-modal="true" aria-label="导入电子书"><div class="top"><h2>导入电子书</h2><button class="icon-btn" id="import-close" aria-label="关闭">×</button></div><button class="btn" id="import-local">从本地文件导入</button><div class="muted">或通过可直接下载 EPUB、PDF 或 MOBI 的 HTTPS 链接导入</div><label for="epub-url">电子书下载地址</label><input type="url" id="epub-url" placeholder="https://example.com/book.pdf" autocomplete="url" inputmode="url"><div class="muted">链接必须公开可访问并允许跨域读取（CORS）；普通书籍介绍页不能直接导入。</div><button class="btn" id="import-url">下载并导入</button><p id="import-status" class="muted" aria-live="polite"></p></div>';
+  overlay.innerHTML='<div class="import-modal" role="dialog" aria-modal="true" aria-label="导入电子书"><div class="top"><h2>导入电子书</h2><button class="icon-btn" id="import-close" aria-label="关闭">×</button></div><button class="btn" id="import-local">从本地文件导入</button><div class="muted">或通过可直接下载 EPUB、PDF 或 MOBI 的 HTTPS 链接导入</div><label for="epub-url">电子书下载地址</label><input type="url" id="epub-url" placeholder="https://example.com/book.pdf" autocomplete="url" inputmode="url"><div class="muted">链接必须公开可访问并允许跨域读取（CORS）；普通书籍介绍页不能直接导入。</div><button class="btn" id="import-url">下载并导入</button> <button class="btn ghost" id="copy-share-link">复制分享链接</button><p id="import-status" class="muted" aria-live="polite"></p></div>';
   document.body.append(overlay);
   overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};
   overlay.querySelector('#import-close').onclick=()=>overlay.remove();
   overlay.querySelector('#import-local').onclick=()=>{overlay.remove();$('#picker').click()};
   overlay.querySelector('#import-url').onclick=async()=>{let input=overlay.querySelector('#epub-url'),button=overlay.querySelector('#import-url'),status=overlay.querySelector('#import-status');button.disabled=true;status.textContent='正在下载…';try{await importUrl(input.value.trim(),status);overlay.remove()}catch(e){status.textContent=e.message;button.disabled=false}};
+  overlay.querySelector('#copy-share-link').onclick=async()=>{
+   const input=overlay.querySelector('#epub-url'),status=overlay.querySelector('#import-status');
+   try{
+    const file=new URL(input.value.trim());
+    if(file.protocol!=='https:'||file.username||file.password)throw Error('分享地址必须是公开可访问的 HTTPS 下载链接');
+    const link=new URL('./',location.href);link.searchParams.set('import',file.href);
+    await navigator.clipboard.writeText(link.href);
+    status.textContent='分享链接已复制。收到链接的人打开后，电子书将自动加入书架（已有则跳过）。';
+   }catch(error){status.textContent=error?.message||'复制失败，请检查剪贴板权限'}
+  };
 }
 async function importUrl(value,status){
   let url;try{url=new URL(value)}catch{throw Error('请输入完整的 HTTPS 下载地址')}
