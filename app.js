@@ -14,7 +14,7 @@ async function refresh(){if(!active)syncPageTheme(null);books=(await all('books'
 
 const onlineLibrary={items:[],loaded:false,loading:false,query:'',error:'',status:'',generatedAt:'',importing:null,message:''};
 const ONLINE_SOURCE_ORIGIN='https://reader-ebook.tos-cn-beijing.volces.com';
-const MAX_ONLINE_BOOK_BYTES=30*1024*1024;
+const MAX_ONLINE_BOOK_BYTES=250*1024*1024;
 function onlineBookRows(){
  const q=onlineLibrary.query.trim().toLocaleLowerCase();
  const found=onlineLibrary.items.map((book,index)=>({book,index})).filter(({book})=>
@@ -25,7 +25,7 @@ function onlineBookRows(){
   const tooLarge=book.size>MAX_ONLINE_BOOK_BYTES;
   const downloading=onlineLibrary.importing===index;
   const disabled=imported||tooLarge||onlineLibrary.importing!==null;
-  const label=imported?'已加入书架':tooLarge?'文件超过30MB':downloading?'导入中…':'一键导入';
+  const label=imported?'已加入书架':tooLarge?'文件超过250MB':downloading?'导入中…':'一键导入';
   const size=(book.size/1048576).toFixed(1)+' MB';
   return '<article class="online-book"><div class="online-book-icon" aria-hidden="true">▤</div>'+
    '<div class="online-book-info"><strong>'+esc(book.title)+'</strong><span>'+esc(book.format.toUpperCase())+' · '+esc(size)+'</span></div>'+
@@ -275,11 +275,11 @@ async function importUrl(value,status){
   
   let response;try{response=await fetch(url.href,{mode:'cors',credentials:'omit',redirect:'follow'})}catch{throw Error('无法下载：请检查地址、网络及网站是否允许跨域访问（CORS）')}
   if(!response.ok)throw Error('下载失败，HTTP '+response.status);
-  const max=30*1024*1024,len=Number(response.headers.get('content-length')||0);
-  if(len>max)throw Error('文件超过 30MB 上限');
+  const max=250*1024*1024,len=Number(response.headers.get('content-length')||0);
+  if(len>max)throw Error('文件超过 250MB 上限');
   let blob;try{
-    if(response.body&&response.body.getReader){let reader=response.body.getReader(),chunks=[],total=0;while(true){let {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>max){await reader.cancel();throw Error('文件超过 30MB 上限')}chunks.push(value);status.textContent='已下载 '+(total/1048576).toFixed(1)+' MB'}blob=new Blob(chunks)}
-    else{blob=await response.blob();if(blob.size>max)throw Error('文件超过 30MB 上限')}
+    if(response.body&&response.body.getReader){let reader=response.body.getReader(),chunks=[],total=0;while(true){let {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>max){await reader.cancel();throw Error('文件超过 250MB 上限')}chunks.push(value);status.textContent='已下载 '+(total/1048576).toFixed(1)+' MB'}blob=new Blob(chunks)}
+    else{blob=await response.blob();if(blob.size>max)throw Error('文件超过 250MB 上限')}
   }catch(e){throw Error('下载中断：'+e.message)}
   let head=new Uint8Array(await blob.slice(0,4).arrayBuffer());
   let isZip=head[0]===0x50&&head[1]===0x4b,isPDF=head[0]===0x25&&head[1]===0x50&&head[2]===0x44&&head[3]===0x46;if(!isZip&&!isPDF&&blob.size<80)throw Error('无法识别下载文件格式');
