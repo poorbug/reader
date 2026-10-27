@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Refresh the public bookshelf hourly, even when no code changes.
+    - cron: '17 * * * *'
 permissions:
   contents: read
   pages: write
@@ -40,6 +43,16 @@ jobs:
           for file in view.js mobi.js paginator.js epubcfi.js progress.js overlayer.js text-walker.js vendor/fflate.js; do
             test -s "vendor/foliate-js/$file" || (echo "Missing foliate dependency: $file" && exit 1)
           done
+      - name: Generate online bookshelf from TOS
+        env:
+          TOS_ACCESS_KEY: ${{ secrets.TOS_ACCESS_KEY }}
+          TOS_SECRET_KEY: ${{ secrets.TOS_SECRET_KEY }}
+        run: |
+          python3 -m py_compile scripts/sync_tos_catalog.py
+          if [ -n "$TOS_ACCESS_KEY" ] && [ -n "$TOS_SECRET_KEY" ]; then
+            python3 -m pip install --disable-pip-version-check tos
+          fi
+          python3 scripts/sync_tos_catalog.py
       - name: Remove Git checkout metadata
         run: rm -rf vendor/foliate-js/.git
       - name: Configure Pages

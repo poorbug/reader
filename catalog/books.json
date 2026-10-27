@@ -1,0 +1,10 @@
+{
+  "status": "unavailable",
+  "source": "TOS",
+  "bucket": "reader-ebook",
+  "prefix": "books/",
+  "generatedAt": null,
+  "count": 0,
+  "books": [],
+  "warning": "在线书库正在准备首次同步。如果持续出现，请确认 TOS 已授权 ListBucket，或配置同步所需的只读凭证。"
+}

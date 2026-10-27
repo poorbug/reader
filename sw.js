@@ -1,6 +1,6 @@
-const NAME='zhijian-reader-v71';
-const VERSION='1.0.71';
-const CORE=['./','./index.html','./style.css','./app.js','./icon.svg','./manifest.webmanifest','./mobi-reader.html','./continuous-reader.html','./pdf-reader.html','./selection.js','./vendor/qrcode.min.js','./note-share.js','./version.json'];
+const NAME='zhijian-reader-v72';
+const VERSION='1.0.72';
+const CORE=['./','./index.html','./style.css','./app.js','./icon.svg','./manifest.webmanifest','./mobi-reader.html','./continuous-reader.html','./pdf-reader.html','./selection.js','./vendor/qrcode.min.js','./note-share.js','./version.json','./catalog/books.json'];
 // Essential foliate modules are deployed on this same origin, so MOBI can open offline.
 const MOBI_MODULES=[
  './vendor/foliate-js/view.js',
@@ -50,6 +50,16 @@ self.addEventListener('fetch',event=>{
  // The version check must always reach the published site, not our offline cache.
  if(url.origin===self.location.origin&&url.pathname.endsWith('/version.json')){
   event.respondWith(fetch(event.request,{cache:'no-store'}));
+  return;
+ }
+ // The online bookshelf changes hourly without an app release. Always try
+ // the network first, storing only one stable offline fallback cache key.
+ if(url.origin===self.location.origin&&url.pathname.endsWith('/catalog/books.json')){
+  const key=new URL('./catalog/books.json',self.registration.scope).href;
+  event.respondWith(fetch(event.request,{cache:'no-store'}).then(async response=>{
+   if(response.ok)await caches.open(NAME).then(cache=>cache.put(key,response.clone()));
+   return response;
+  }).catch(()=>caches.match(key).then(cached=>cached||Response.error())));
   return;
  }
  event.respondWith(caches.match(event.request).then(hit=>hit||fetch(event.request).then(response=>{
