@@ -27,7 +27,7 @@ Pages 地址（启用 Pages 后）：https://poorbug.github.io/reader/
 
 ## 在线书库（火山引擎 TOS）
 
-书架新增「在线书库」标签，可搜索公开书籍、查看格式和大小，并一键导入本地书架。已导入的下载链接会显示「已加入书架」；下载仍复用 SHA-256 去重和 IndexedDB 保存逻辑，不会覆盖用户已有进度或笔记。当前单本文件导入上限 30 MiB。
+书架新增「在线书库」标签，可搜索公开书籍、查看格式和大小，并一键导入本地书架。已导入的下载链接会显示「已加入书架」；下载仍复用 SHA-256 去重和 IndexedDB 保存逻辑，不会覆盖用户已有进度或笔记。当前单本文件导入上限 250 MiB（大文件请留意移动设备存储空间及流量）。
 
 - 数据源：`https://reader-ebook.tos-cn-beijing.volces.com/books/`。
 - `.github/workflows/deploy.yml` 在每次推送及每小时第 17 分钟运行时，通过 `scripts/sync_tos_catalog.py` 枚举 TOS `books/` 前缀（含分页），生成 `catalog/books.json` 后发布 GitHub Pages。无需用户每次上传时提交 GitHub 代码。GitHub Actions 的定时运行有可能延迟。
