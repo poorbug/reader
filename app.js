@@ -11,9 +11,95 @@ function saveSettings(){try{localStorage.setItem('zhijian-reading-settings',JSON
 try{settings={...settings,...JSON.parse(localStorage.getItem('zhijian-reading-settings')||'{}')}}catch{}
 function toast(s){$('.toast')?.remove();let e=document.createElement('div');e.className='toast';e.textContent=s;document.body.append(e);setTimeout(()=>e.remove(),3500)}
 async function refresh(){if(!active)syncPageTheme(null);books=(await all('books')).sort((a,b)=>String(b.lastRead||b.createdAt).localeCompare(String(a.lastRead||a.createdAt)));render()}
+
+const onlineLibrary={items:[],loaded:false,loading:false,query:'',error:'',status:'',generatedAt:'',importing:null,message:''};
+const ONLINE_SOURCE_ORIGIN='https://reader-ebook.tos-cn-beijing.volces.com';
+const MAX_ONLINE_BOOK_BYTES=30*1024*1024;
+function onlineBookRows(){
+ const q=onlineLibrary.query.trim().toLocaleLowerCase();
+ const found=onlineLibrary.items.map((book,index)=>({book,index})).filter(({book})=>
+  !q||(book.title+' '+book.name+' '+book.format).toLocaleLowerCase().includes(q));
+ if(!found.length)return '<p class="online-empty">'+(onlineLibrary.items.length?'没有匹配的书籍':'暂无可导入的书籍')+'</p>';
+ return found.map(({book,index})=>{
+  const imported=books.some(item=>item.sourceUrl===book.url);
+  const tooLarge=book.size>MAX_ONLINE_BOOK_BYTES;
+  const downloading=onlineLibrary.importing===index;
+  const disabled=imported||tooLarge||onlineLibrary.importing!==null;
+  const label=imported?'已加入书架':tooLarge?'文件超过30MB':downloading?'导入中…':'一键导入';
+  const size=(book.size/1048576).toFixed(1)+' MB';
+  return '<article class="online-book"><div class="online-book-icon" aria-hidden="true">▤</div>'+
+   '<div class="online-book-info"><strong>'+esc(book.title)+'</strong><span>'+esc(book.format.toUpperCase())+' · '+esc(size)+'</span></div>'+
+   '<button type="button" class="btn small'+(imported?' ghost':'')+'" data-online-import="'+index+'"'+(disabled?' disabled':'')+'>'+label+'</button></article>';
+ }).join('');
+}
+function onlineCatalogMarkup(){
+ const count=onlineLibrary.items.length;
+ const date=onlineLibrary.generatedAt?new Date(onlineLibrary.generatedAt):null;
+ const synced=date&&!Number.isNaN(date.getTime())?' · 更新于 '+date.toLocaleString('zh-CN'):'';
+ const info=onlineLibrary.loading?'正在同步书籍列表…':
+  onlineLibrary.error||('共 '+count+' 本在线书籍'+synced+(onlineLibrary.status==='stale'?' · 目前使用上次同步的目录':''));
+ return '<section class="online-library"><div class="online-library-heading"><div><h2>在线书库</h2><p class="muted">来自公开 TOS 书库 · 选择书籍后下载至当前设备</p></div>'+
+  '<button type="button" class="btn ghost small" id="online-refresh"'+(onlineLibrary.loading?' disabled':'')+'>刷新列表</button></div>'+
+  '<p class="online-catalog-status" id="online-catalog-status" role="status">'+esc(info)+'</p>'+
+  '<input id="online-search" type="search" aria-label="搜索在线书籍" placeholder="搜索书名或文件格式" value="'+esc(onlineLibrary.query)+'" autocomplete="off">'+
+  '<p class="online-import-status" id="online-import-status" aria-live="polite">'+esc(onlineLibrary.message)+'</p>'+
+  '<div class="online-book-list" id="online-results">'+onlineBookRows()+'</div></section>';
+}
+async function loadOnlineCatalog(){
+ if(onlineLibrary.loading)return;
+ onlineLibrary.loading=true;onlineLibrary.error='';onlineLibrary.message='';
+ if(view==='shelf'&&tab==='online')render();
+ try{
+  const request=new URL('./catalog/books.json',location.href);
+  request.searchParams.set('_',Date.now());
+  const response=await fetch(request.href,{cache:'no-store'});
+  if(!response.ok)throw Error('目录请求失败（HTTP '+response.status+'）');
+  const data=await response.json();
+  if(!data||!Array.isArray(data.books))throw Error('云端目录格式不正确');
+  onlineLibrary.status=data.status||'unavailable';
+  onlineLibrary.generatedAt=data.generatedAt||'';
+  onlineLibrary.items=data.books.filter(book=>{
+   if(!book||typeof book.title!=='string'||typeof book.name!=='string'||!['mobi','epub','pdf'].includes(book.format)||!Number.isFinite(book.size)||book.size<=0)return false;
+   try{
+    const url=new URL(book.url);
+    return url.protocol==='https:'&&url.origin===ONLINE_SOURCE_ORIGIN&&url.pathname.startsWith('/books/')&&!url.username&&!url.password;
+   }catch{return false}
+  });
+  if(data.status==='unavailable')onlineLibrary.error=data.warning||'TOS 目录暂时无法列举，请检查 ListBucket 权限。';
+  else if(data.status!=='ok'&&data.status!=='stale')onlineLibrary.error='在线书库目前不可用。';
+ }catch(error){onlineLibrary.error='加载在线书库失败：'+error.message}
+ finally{
+  onlineLibrary.loading=false;onlineLibrary.loaded=true;
+  if(view==='shelf'&&tab==='online')render();
+ }
+}
+function bindOnlineImportButtons(){
+ document.querySelectorAll('[data-online-import]').forEach(button=>button.onclick=async()=>{
+  const index=Number(button.dataset.onlineImport),book=onlineLibrary.items[index];
+  if(!book||onlineLibrary.importing!==null||book.size>MAX_ONLINE_BOOK_BYTES)return;
+  if(books.some(existing=>existing.sourceUrl===book.url))return;
+  onlineLibrary.importing=index;onlineLibrary.message='正在下载《'+book.title+'》…';
+  if(view==='shelf'&&tab==='online')render();
+  const status={set textContent(value){onlineLibrary.message=value;const label=$('#online-import-status');if(label)label.textContent=value}};
+  try{
+   const result=await importUrl(book.url,status);
+   onlineLibrary.message=result?.state==='existing'?'书架中已有《'+result.title+'》，无需重复导入。':'已导入《'+(result?.title||book.title)+'》到本地书架。';
+  }catch(error){onlineLibrary.message='《'+book.title+'》导入失败：'+error.message}
+  finally{onlineLibrary.importing=null;if(view==='shelf'&&tab==='online')render()}
+ });
+}
+function wireOnlineLibrary(){
+ $('#online-refresh')?.addEventListener('click',()=>loadOnlineCatalog());
+ $('#online-search')?.addEventListener('input',event=>{
+  onlineLibrary.query=event.target.value;
+  const rows=$('#online-results');if(rows){rows.innerHTML=onlineBookRows();bindOnlineImportButtons()}
+ });
+ bindOnlineImportButtons();
+ if(!onlineLibrary.loaded&&!onlineLibrary.loading)loadOnlineCatalog();
+}
 function shell(body){app.innerHTML='<main class="app '+(!isStandalone()&&!installBannerDismissed?'with-install-strip':'')+'">'+installBannerHtml()+'<header class="top"><div><div class="eyebrow">MY READING SPACE</div><h1>'+({shelf:'我的书架',notes:'阅读笔记',settings:'设置'}[view])+'</h1>'+(view==='shelf'?'<p class="shelf-subtitle">'+books.length+' 本书 · 所有书籍仅保存于当前设备</p>':'')+'</div>'+(view==='shelf'?'<button class="btn" id="add">＋ 导入</button>':'')+'</header>'+body+'</main><nav class="bottom">'+[['shelf','▤','书架'],['notes','✎','笔记'],['settings','⚙','设置']].map(x=>'<button class="nav '+(view===x[0]?'active':'')+'" data-nav="'+x[0]+'"><span>'+x[1]+'</span>'+x[2]+'</button>').join('')+'</nav><input type="file" accept=".epub,.pdf,.mobi,application/epub+zip,application/pdf,application/x-mobipocket-ebook" multiple hidden id="picker">';
 wireInstallButton();document.querySelectorAll('[data-nav]').forEach(e=>e.onclick=()=>{if(e.dataset.nav==='notes')notesGroupBookId=null;view=e.dataset.nav;render()});$('#add')?.addEventListener('click',showImportOptions);$('#picker').onchange=e=>importFiles(e.target.files)}
-function render(){if(active)return;if(view==='shelf'){const filtered=books.filter(b=>tab==='all'||b.status===tab);shell('<div class="tabs">'+[['all','全部'],['reading','在读'],['finished','已读'],['archived','归档']].map(x=>'<button class="tab '+(tab===x[0]?'active':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+(filtered.length?'<section class="books">'+filtered.map(b=>'<article class="book" data-book="'+b.id+'"><div class="cover">'+(b.cover?'<img alt="" src="'+b.cover+'">':esc(b.title))+'</div><div class="book-title">'+esc(b.title)+'</div><div class="book-author">'+esc(b.author||'未知作者')+'</div><div class="progress"><div style="width:'+Math.round((b.percent||0)*100)+'%"></div></div></article>').join('')+'</section>':'<div class="empty"><div class="big">▤</div><h2>'+(books.length?'这个分类暂无书籍':'你的书架还是空的')+'</h2><p>'+(books.length?'试试切换其他分类':'点击右上角「＋ 导入」，添加你的第一本书')+'</p></div>'));document.querySelectorAll('[data-tab]').forEach(e=>e.onclick=()=>{tab=e.dataset.tab;render()});wireBookCoverGestures();}else if(view==='notes')notesPage();else{shell(installSettingsHtml()+'<div class="card"><h2>本地书库与备份</h2><p class="muted">电子书、进度、笔记保存在 IndexedDB；清理网站数据可能丢失，请定期备份。</p><button class="btn" id="export">导出完整备份</button> <button class="btn ghost" id="import-backup">恢复备份</button><input type="file" accept=".json" hidden id="backup-picker"></div><div class="card update-card"><h2>应用更新</h2><p class="muted">当前运行版本：<strong>v'+APP_VERSION+'</strong></p><p id="update-status" class="muted" role="status" aria-live="polite">点击按钮检查 GitHub Pages 上的最新版本。</p><div class="update-actions"><button class="btn" id="check-update">检查更新</button><button class="btn ghost" id="refresh-update" hidden>刷新并使用新版</button></div><p class="muted">仅更新阅读器程序，不会主动删除本地书籍和笔记。</p></div><div class="card"><h2>关于纸间</h2><p><strong>当前版本：v'+APP_VERSION+'</strong></p><p>无需账号 · 无服务器上传 · 可离线阅读</p><p class="muted">首次打开请保持联网，待应用资源缓存后再断网测试。</p></div>');$('#export').onclick=backup;$('#import-backup').onclick=()=>$('#backup-picker').click();$('#backup-picker').onchange=e=>restore(e.target.files[0]);$('#check-update').onclick=checkForAppUpdates;$('#refresh-update').onclick=()=>window.location.reload();paintUpdateStatus()}}
+function render(){if(active)return;if(view==='shelf'){const filtered=tab==='online'?[]:books.filter(b=>tab==='all'||b.status===tab);shell('<div class="tabs">'+[['all','全部'],['reading','在读'],['finished','已读'],['archived','归档'],['online','在线书库']].map(x=>'<button class="tab '+(tab===x[0]?'active':'')+'" data-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+(tab==='online'?onlineCatalogMarkup():(filtered.length?'<section class="books">'+filtered.map(b=>'<article class="book" data-book="'+b.id+'"><div class="cover">'+(b.cover?'<img alt="" src="'+b.cover+'">':esc(b.title))+'</div><div class="book-title">'+esc(b.title)+'</div><div class="book-author">'+esc(b.author||'未知作者')+'</div><div class="progress"><div style="width:'+Math.round((b.percent||0)*100)+'%"></div></div></article>').join('')+'</section>':'<div class="empty"><div class="big">▤</div><h2>'+(books.length?'这个分类暂无书籍':'你的书架还是空的')+'</h2><p>'+(books.length?'试试切换其他分类':'点击右上角「＋ 导入」，添加你的第一本书')+'</p></div>')));document.querySelectorAll('[data-tab]').forEach(e=>e.onclick=()=>{tab=e.dataset.tab;if(tab==='online')onlineLibrary.loaded=false;render()});if(tab==='online')wireOnlineLibrary();else wireBookCoverGestures();}else if(view==='notes')notesPage();else{shell(installSettingsHtml()+'<div class="card"><h2>本地书库与备份</h2><p class="muted">电子书、进度、笔记保存在 IndexedDB；清理网站数据可能丢失，请定期备份。</p><button class="btn" id="export">导出完整备份</button> <button class="btn ghost" id="import-backup">恢复备份</button><input type="file" accept=".json" hidden id="backup-picker"></div><div class="card update-card"><h2>应用更新</h2><p class="muted">当前运行版本：<strong>v'+APP_VERSION+'</strong></p><p id="update-status" class="muted" role="status" aria-live="polite">点击按钮检查 GitHub Pages 上的最新版本。</p><div class="update-actions"><button class="btn" id="check-update">检查更新</button><button class="btn ghost" id="refresh-update" hidden>刷新并使用新版</button></div><p class="muted">仅更新阅读器程序，不会主动删除本地书籍和笔记。</p></div><div class="card"><h2>关于纸间</h2><p><strong>当前版本：v'+APP_VERSION+'</strong></p><p>无需账号 · 无服务器上传 · 可离线阅读</p><p class="muted">首次打开请保持联网，待应用资源缓存后再断网测试。</p></div>');$('#export').onclick=backup;$('#import-backup').onclick=()=>$('#backup-picker').click();$('#backup-picker').onchange=e=>restore(e.target.files[0]);$('#check-update').onclick=checkForAppUpdates;$('#refresh-update').onclick=()=>window.location.reload();paintUpdateStatus()}}
 // Installation guide. Safari on iOS cannot be installed directly by a web button.
 let pendingInstallPrompt=null,installBannerDismissed=false;
 const isStandalone=()=>window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
@@ -121,11 +207,12 @@ async function checkForAppUpdates(){
 function showImportOptions(){
   document.querySelector('#import-dialog')?.remove();
   let overlay=document.createElement('div');overlay.id='import-dialog';overlay.className='import-overlay';
-  overlay.innerHTML='<div class="import-modal" role="dialog" aria-modal="true" aria-label="导入电子书"><div class="top"><h2>导入电子书</h2><button class="icon-btn" id="import-close" aria-label="关闭">×</button></div><button class="btn" id="import-local">从本地文件导入</button><div class="muted">粘贴朋友发来的「纸间」分享链接，或直接输入 EPUB、MOBI、PDF 的 HTTPS 下载地址。</div><label for="epub-url">分享链接 / 电子书下载地址</label><input type="url" id="epub-url" placeholder="https://poorbug.github.io/reader/?import=..." autocomplete="url" inputmode="url"><button class="btn ghost" id="import-paste" type="button">从剪贴板粘贴链接</button><div class="muted">下载后的书会添加到现有书架，重复内容不会再次添加。下载地址需允许跨域读取（CORS）。</div><button class="btn" id="import-url">添加到我的书架</button> <button class="btn ghost" id="copy-share-link">复制分享链接</button><p id="import-status" class="muted" aria-live="polite"></p></div>';
+  overlay.innerHTML='<div class="import-modal" role="dialog" aria-modal="true" aria-label="导入电子书"><div class="top"><h2>导入电子书</h2><button class="icon-btn" id="import-close" aria-label="关闭">×</button></div><button class="btn" id="import-local">从本地文件导入</button><button class="btn ghost" id="import-online">从在线书库选择</button><div class="muted">粘贴朋友发来的「纸间」分享链接，或直接输入 EPUB、MOBI、PDF 的 HTTPS 下载地址。</div><label for="epub-url">分享链接 / 电子书下载地址</label><input type="url" id="epub-url" placeholder="https://poorbug.github.io/reader/?import=..." autocomplete="url" inputmode="url"><button class="btn ghost" id="import-paste" type="button">从剪贴板粘贴链接</button><div class="muted">下载后的书会添加到现有书架，重复内容不会再次添加。下载地址需允许跨域读取（CORS）。</div><button class="btn" id="import-url">添加到我的书架</button> <button class="btn ghost" id="copy-share-link">复制分享链接</button><p id="import-status" class="muted" aria-live="polite"></p></div>';
   document.body.append(overlay);
   overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};
   overlay.querySelector('#import-close').onclick=()=>overlay.remove();
   overlay.querySelector('#import-local').onclick=()=>{overlay.remove();$('#picker').click()};
+  overlay.querySelector('#import-online').onclick=()=>{overlay.remove();view='shelf';tab='online';onlineLibrary.loaded=false;render()};
   overlay.querySelector('#import-paste').onclick=async()=>{
    const input=overlay.querySelector('#epub-url'),status=overlay.querySelector('#import-status');
    try{
