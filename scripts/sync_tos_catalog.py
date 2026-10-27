@@ -11,7 +11,6 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,12 +29,8 @@ def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def child_text(node, name, default=""):
-    child = node.find(f"{{*}}{name}")
-    return default if child is None or child.text is None else child.text
-
-
 def anonymous_objects():
+    """List the public TOS bucket using the native JSON ListObjectsV2 API."""
     token = None
     seen_tokens = set()
     for page in range(MAX_PAGES):
@@ -43,23 +38,32 @@ def anonymous_objects():
         if token:
             query["continuation-token"] = token
         uri = BASE + "/?" + urllib.parse.urlencode(query)
-        request = urllib.request.Request(uri, headers={"User-Agent": "PaperReaderCatalog/1.0"})
+        request = urllib.request.Request(uri, headers={"User-Agent": "PaperReaderCatalog/1.1"})
         with urllib.request.urlopen(request, timeout=35) as response:
-            root = ET.fromstring(response.read())
-        encoded = child_text(root, "EncodingType") == "url"
-        for entry in root.findall("{*}Contents"):
-            key = child_text(entry, "Key")
+            # TOS returns JSON, unlike the XML result used by AWS S3.
+            # A successful 200 response must still be validated before publishing.
+            result = json.load(response)
+        if not isinstance(result, dict) or not isinstance(result.get("Contents", []), list) or "IsTruncated" not in result:
+            raise ValueError("Unexpected TOS ListObjectsV2 response structure")
+        encoded = result.get("EncodingType") == "url"
+        for entry in result.get("Contents") or []:
+            if not isinstance(entry, dict):
+                raise ValueError("Invalid TOS object entry")
+            key = entry.get("Key", "")
             if encoded:
-                key = urllib.parse.unquote(key)
+                # TOS specifies application/x-www-form-urlencoded for encoding-type=url.
+                key = urllib.parse.unquote_plus(key)
             yield {
                 "key": key,
-                "size": int(child_text(entry, "Size", "0")),
-                "updatedAt": child_text(entry, "LastModified"),
+                "size": int(entry.get("Size", 0)),
+                "updatedAt": entry.get("LastModified", ""),
             }
-        truncated = child_text(root, "IsTruncated").lower() == "true"
+        truncated = result["IsTruncated"]
+        if not isinstance(truncated, bool):
+            raise ValueError("Invalid IsTruncated value in TOS listing")
         if not truncated:
             return
-        token = child_text(root, "NextContinuationToken")
+        token = result.get("NextContinuationToken")
         if not token or token in seen_tokens:
             raise RuntimeError("TOS returned a repeated/missing continuation token")
         seen_tokens.add(token)
