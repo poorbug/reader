@@ -1,6 +1,8 @@
 name: EPUB reader interaction test
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
 jobs:
   epub-tap:
     runs-on: ubuntu-latest
