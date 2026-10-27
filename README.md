@@ -31,7 +31,7 @@ Pages 地址（启用 Pages 后）：https://poorbug.github.io/reader/
 
 - 数据源：`https://reader-ebook.tos-cn-beijing.volces.com/books/`。
 - `.github/workflows/deploy.yml` 在每次推送及每小时第 17 分钟运行时，通过 `scripts/sync_tos_catalog.py` 枚举 TOS `books/` 前缀（含分页），生成 `catalog/books.json` 后发布 GitHub Pages。无需用户每次上传时提交 GitHub 代码。GitHub Actions 的定时运行有可能延迟。
-- 页面访问时只请求同源的 `catalog/books.json`；Service Worker 对这个 JSON 使用网络优先，不需要发布新 APP_VERSION 才能获取最新书单。点「刷新列表」可重新请求已发布的书单，但不会直接触发 GitHub Actions 同步。
+- 页面访问时只请求同源的 `catalog/books.json`；Service Worker 对这个 JSON 使用网络优先，不需要发布新 APP_VERSION 才能获取最新书单。点「刷新列表」可重新请求已发布的书单，但不会直接触发 GitHub Actions 同步。 若权限刚开放仍显示同步失败，可在 GitHub Actions 手动运行 `Deploy Reader to GitHub Pages` 重新生成书单（页面刷新不会主动执行 TOS 列举）。
 - 如果 TOS 公开访问权限**包括** `tos:ListBucket`，生成脚本可以匿名列举，无需任何密钥。如果仅对具体文件公开读取而禁止列目录，必须在 GitHub 仓库的 **Settings → Secrets and variables → Actions** 添加 `TOS_ACCESS_KEY` 与 `TOS_SECRET_KEY`，对应的 IAM 用户只需最小化的 `tos:ListBucket` 权限（尽量限定 `reader-ebook/books/` 前缀）。**不要把密钥放进前端或提交到仓库。**
 - 目录扫描失败时，脚本会尝试保留上一次成功发布的书单并显示旧数据提示；首次扫描失败则显示具体的权限配置提示，不会把失败伪装成“书库是空的”。
 - 单本文件直接从 TOS 跨域下载。即使文件 URL 可以在浏览器打开，用户一键导入仍要求 TOS CORS 允许来源 `https://poorbug.github.io`、方法 `GET`（及必要时 `HEAD`）。`ListBucket` 的服务端同步并不要求浏览器具有跨域列目录权限。
