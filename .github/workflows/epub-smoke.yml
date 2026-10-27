@@ -42,6 +42,10 @@ jobs:
         run: node tests/shared-book-import.cjs
       - name: Verify WebKit shared book auto-import
         run: BROWSER=webkit node tests/shared-book-import.cjs
+      - name: Verify Chromium online TOS bookshelf
+        run: node tests/online-library.cjs
+      - name: Verify WebKit online TOS bookshelf
+        run: BROWSER=webkit node tests/online-library.cjs
       - name: Verify Chromium note share image
         run: node tests/note-share.cjs
       - name: Verify WebKit note share image
