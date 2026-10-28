@@ -69,6 +69,9 @@ function saveContinuousProgress(data){
    cfi:data.cfi||old.cfi||null,
    sectionIndex:data.sectionIndex??old.sectionIndex??0,
    sectionFraction:data.sectionFraction??old.sectionFraction??0,
+   sectionOffsetPx:Number.isFinite(data.sectionOffsetPx)?data.sectionOffsetPx:(old.sectionOffsetPx??null),
+   viewportWidth:Number.isFinite(data.viewportWidth)?data.viewportWidth:(old.viewportWidth??null),
+   fontSize:Number.isFinite(data.fontSize)?data.fontSize:(old.fontSize??null),
    percent:typeof data.percent==='number'?data.percent:(old.percent||0),
    updatedAt:new Date(receivedAt).toISOString()};
   await put('progress',record);
@@ -958,7 +961,7 @@ async function openDocumentReader(b,f,target){
     frame.onload=async()=>{try{if(!active||active.id!==b.id)return;const data=await f.blob.arrayBuffer();frame.contentWindow.postMessage({type:'OPEN_PDF',buffer:data},location.origin,[data])}catch(err){toast('PDF 加载失败：'+err.message)}};
   }else{
     let frame=document.createElement('iframe');frame.src='./continuous-reader.html?embed=1';frame.title=b.title;frame.style.cssText='width:100%;height:100%;border:0;background:#fff';$('#document-body').append(frame);
-    frame.onload=async()=>{if(!active||active.id!==b.id)return;let data=await f.blob.arrayBuffer();const progress=await latestReadingProgress(b.id);const saved=['foliate','continuous'].includes(progress?.engine)?progress:null;frame.contentWindow.postMessage({type:'OPEN_BOOK',format,bookId:b.id,cfi:target||saved?.cfi||null,restoreExact:!!target,sectionIndex:saved?.sectionIndex??null,sectionFraction:saved?.sectionFraction??null,prefs:settings,notes:(await all('highlights')).filter(h=>h.bookId===b.id).map(h=>({id:h.id,cfi:h.cfi||null,text:h.text,note:h.note||''})),buffer:data,name:f.name||b.title+'.'+format},location.origin,[data])};
+    frame.onload=async()=>{if(!active||active.id!==b.id)return;let data=await f.blob.arrayBuffer();const progress=await latestReadingProgress(b.id);const saved=['foliate','continuous'].includes(progress?.engine)?progress:null;frame.contentWindow.postMessage({type:'OPEN_BOOK',format,bookId:b.id,cfi:target||saved?.cfi||null,restoreExact:!!target,sectionIndex:saved?.sectionIndex??null,sectionFraction:saved?.sectionFraction??null,sectionOffsetPx:saved?.sectionOffsetPx??null,viewportWidth:saved?.viewportWidth??null,fontSize:saved?.fontSize??null,prefs:settings,notes:(await all('highlights')).filter(h=>h.bookId===b.id).map(h=>({id:h.id,cfi:h.cfi||null,text:h.text,note:h.note||''})),buffer:data,name:f.name||b.title+'.'+format},location.origin,[data])};
   }
   b.lastRead=now();await put('books',b);
 }
