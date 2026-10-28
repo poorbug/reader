@@ -4,8 +4,8 @@ const assert=require('node:assert/strict');
 // Minimal, unencrypted two-chapter MOBI fixture. No external book downloads.
 function mobiFixture(){
  const encoder=new TextEncoder();
- const chapter=n=>'<h1>第'+n+'章</h1>'+Array.from({length:55},(_,i)=>
-  '<p>第'+n+'章第'+(i+1)+'段，测试手机息屏与应用被系统回收后的恢复位置。</p>').join('');
+ const chapter=n=>'<h1>第'+n+'章</h1>'+Array.from({length:28},(_,i)=>
+  '<p>第'+n+'章第'+(i+1)+'段，手机息屏恢复位置测试。</p>').join('');
  const raw=encoder.encode('<html><head><title>阅读进度恢复</title></head><body>'+chapter(1)+'<mbp:pagebreak/>'+chapter(2)+'</body></html>');
  const title=encoder.encode('Mobile Resume Fixture'),rec0=new Uint8Array(280),h=new DataView(rec0.buffer);
  h.setUint16(0,1);h.setUint32(4,raw.length);h.setUint16(8,1);h.setUint16(10,4096);h.setUint16(12,0);
