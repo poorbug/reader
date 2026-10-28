@@ -24,6 +24,10 @@ jobs:
         run: npx playwright install --with-deps chromium webkit
       - name: Start static site
         run: python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/reader-http.log 2>&1 &
+      - name: Verify Chromium mobile reading resume after pagehide
+        run: node tests/mobile-reading-resume.cjs
+      - name: Verify WebKit mobile reading resume after pagehide
+        run: BROWSER=webkit node tests/mobile-reading-resume.cjs
       - name: Verify Chromium EPUB tap
         run: node tests/epub-tap.cjs
       - name: Verify WebKit EPUB tap

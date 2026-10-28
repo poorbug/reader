@@ -237,6 +237,7 @@ function wireText(item,doc){
  },{capture:true,passive:true});
  doc.addEventListener('touchend',event=>{
   const p=start;start=null;const t=event.changedTouches?.[0];
+  if(p?.moved)flushReadingPosition();
   if(!p||!t||p.moved||Date.now()-p.time>380||Math.hypot(t.clientX-p.x,t.clientY-p.y)>12||doc.__zhijianSelecting||doc.__zhijianSelectionActive||event.target?.closest?.('a,button,input'))return;
   if(activateNoteAt(t.clientX,t.clientY)){
    // Suppress Safari's synthesized click, otherwise it also opens the toolbar.
@@ -329,16 +330,51 @@ function activeIndex(){
  while(found<items.length&&items[found].state==='skipped')found++;
  return found<items.length?found:(items.findLast(item=>item.state!=='skipped')?.index??0);
 }
+// Keep a tiny crash-safe checkpoint on the same origin as the host PWA.
+// A mobile WebView can be frozen/killed before the debounced postMessage reaches
+// IndexedDB, but a synchronous localStorage write survives that termination.
+const readingCheckpointKey=bookId=>'zhijian-reader-position:'+bookId;
+function captureReadingPosition(){
+ if(!book||restoring||!items.length)return null;
+ const scroller=$('#scroll');
+ // Background WebViews sometimes report a collapsed 0×0 viewport. Never
+ // overwrite a good checkpoint with measurements taken after suspension.
+ if(scroller.clientWidth<80||scroller.clientHeight<80)return null;
+ const index=activeIndex(),region=items[index];
+ if(!region||region.state==='skipped')return null;
+ const fraction=Math.max(0,Math.min(1,
+  (scroller.scrollTop-region.el.offsetTop)/Math.max(1,region.height-scroller.clientHeight)));
+ return {
+  engine:'continuous',sectionIndex:index,sectionFraction:fraction,
+  sectionOffsetPx:Math.max(0,Math.round(scroller.scrollTop-region.el.offsetTop)),
+  viewportWidth:scroller.clientWidth,fontSize,
+  cfi:book.sections[index]?.cfi??CFI?.fake?.fromIndex(index)??null,
+  percent:Math.max(0,Math.min(1,(index+fraction)/(book.sections.length||1))),
+  updatedAt:Date.now()
+ };
+}
+function flushReadingPosition(){
+ clearTimeout(saveTimer);
+ clearTimeout(updateTimer);
+ saveTimer=null;updateTimer=null;
+ const position=captureReadingPosition();
+ if(!position)return;
+ current=position.sectionIndex;
+ if(embedded){
+  if(embeddedBookId)try{
+   localStorage.setItem(readingCheckpointKey(embeddedBookId),JSON.stringify(position));
+  }catch(error){console.warn('Unable to checkpoint reading progress',error)}
+  tell('MOBI_PROGRESS',position);
+ }else persist({progress:{index:position.sectionIndex,fraction:position.sectionFraction}});
+ return position;
+}
+window.__zhijianSaveReadingPosition=flushReadingPosition;
 function updateActive(){
  if(!book||restoring)return;
  current=activeIndex();
  $('#progress').hidden=false;$('#progress').textContent=fmt(current);
- const region=items[current];const top=region.el.offsetTop,scroller=$('#scroll');
- const fraction=Math.max(0,Math.min(1,(scroller.scrollTop-top)/Math.max(1,region.height-scroller.clientHeight)));
- clearTimeout(saveTimer);saveTimer=setTimeout(()=>{
-  persist({progress:{index:current,fraction}});
-  if(embedded)tell('MOBI_PROGRESS',{engine:'continuous',sectionIndex:current,sectionFraction:fraction,cfi:book.sections[current]?.cfi??CFI?.fake?.fromIndex(current)??null,percent:Math.max(0,Math.min(1,(current+fraction)/(book.sections.length||1)))});
- },450);
+ clearTimeout(saveTimer);
+ saveTimer=setTimeout(flushReadingPosition,250);
  loadNearby();
 }
 function pruneChapters(){
@@ -402,7 +438,7 @@ function saveNote(withNote){
  records.push(entry);persist({notes:records});redrawNotes();clearSelection();logger('已保存'+(withNote?'笔记':'划线'));
 }
 async function openFile(file,options={}){
- const gen=++generation;clearTimeout(settleTimer);lastScrollAt=0;bookOptions=options;embeddedBookId=options.bookId||null;activeBookFormat=options.format||'epub';readerPrefs={...readerPrefs,...(options.prefs||{})};fontSize=Number(readerPrefs.size)||19;$('#status').textContent='正在解析 '+file.name+' …';
+ const gen=++generation;clearTimeout(settleTimer);clearTimeout(saveTimer);clearTimeout(updateTimer);lastScrollAt=0;bookOptions=options;embeddedBookId=options.bookId||null;activeBookFormat=options.format||'epub';readerPrefs={...readerPrefs,...(options.prefs||{})};fontSize=Number(readerPrefs.size)||19;$('#status').textContent='正在解析 '+file.name+' …';
  const loading=$('#reader-loading');if(embedded){loading.hidden=false;loading.textContent='正在加载 '+activeBookFormat.toUpperCase()+' 阅读引擎…'}
  clearSelection();hidePanels();
  const old=book;for(const it of items){it.observer?.disconnect();if(it.measureFrame)cancelAnimationFrame(it.measureFrame);try{old?.sections?.[it.index]?.unload?.()}catch{}}
@@ -439,7 +475,21 @@ async function openFile(file,options={}){
   loadNearby();
   const item=items[current];if(item.state!=='ready')await new Promise(resolve=>{item.onReady.push(resolve);mount(item,gen)});
   if(item.state!=='ready')throw Error('无法加载初始章节');
-  root.scrollTop=item.el.offsetTop+(saved?.fraction||0)*Math.max(0,item.height-root.clientHeight);
+  // Previous visible chapters must finish their first measurement BEFORE
+  // calculating the restored scrollTop; otherwise their late resize shifts
+  // this chapter away from the saved position (scroll anchoring is disabled).
+  const preceding=items.slice(Math.max(0,current-BEFORE),current).filter(it=>it.state!=='skipped');
+  await Promise.all(preceding.map(it=>it.state==='ready'?Promise.resolve():
+   new Promise(resolve=>{it.onReady.push(resolve);mount(it,gen)})));
+  if(gen!==generation)return;
+  // Prefer the exact pixel offset when the device width/font are unchanged.
+  // Fall back to chapter-relative fraction after a font or viewport change.
+  const sameLayout=Number.isFinite(saved?.sectionOffsetPx)&&saved.sectionOffsetPx>=0&&
+   saved.viewportWidth===root.clientWidth&&saved.fontSize===fontSize;
+  const maxOffset=Math.max(0,item.height-root.clientHeight);
+  const restoredOffset=sameLayout?Math.min(saved.sectionOffsetPx,maxOffset):
+   (saved?.fraction||0)*maxOffset;
+  root.scrollTop=item.el.offsetTop+restoredOffset;
   if(cfiTarget?.anchor&&(options.restoreExact||typeof options.sectionFraction!=='number'||!Number.isFinite(options.sectionFraction))){try{const anchor=cfiTarget.anchor(item.frame.contentDocument);let y=0;if(typeof anchor==='number')y=anchor*item.height;else if(anchor?.getBoundingClientRect)y=anchor.getBoundingClientRect().top;root.scrollTop=item.el.offsetTop+y}catch(error){console.warn('Restore CFI failed',error)}}
   restoring=false;updateActive();
   $('#status').textContent=(book.metadata?.title||file.name)+' · '+book.sections.length+' 章 · 多章节连续滚动';
@@ -467,6 +517,12 @@ let userScrollGestureUntil=0;
 $('#scroll').addEventListener('touchmove',()=>{userScrollGestureUntil=Date.now()+500},{passive:true});
 $('#scroll').addEventListener('wheel',()=>{userScrollGestureUntil=Date.now()+500},{passive:true});
 $('#scroll').addEventListener('scroll',()=>{lastScrollAt=Date.now();scheduleActive();scheduleIdleMaintenance();if(embedded&&Date.now()<userScrollGestureUntil)tell('READER_SCROLL')},{passive:true});
+// Flush even if the last scroll event has not yet passed its debounce window.
+$('#scroll').addEventListener('touchend',flushReadingPosition,{passive:true});
+$('#scroll').addEventListener('pointerup',event=>{if(event.pointerType==='mouse')flushReadingPosition()},{passive:true});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)flushReadingPosition()});
+window.addEventListener('pagehide',flushReadingPosition);
+document.addEventListener('freeze',flushReadingPosition);
 $('#toc').onclick=()=>renderPanel('toc');$('#notes').onclick=()=>renderPanel('notes');
 $('#panel-close').onclick=()=>$('#panel').classList.remove('visible');
 $('#hide').onclick=()=>$('#toolbar').classList.remove('visible');

@@ -1,12 +1,105 @@
 'use strict';
-const APP_VERSION='1.0.72';
+const APP_VERSION='1.0.73';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');let db,books=[],tab='reading',view='shelf',notesGroupBookId=null,active=null,epub=null,rendition=null,toc=[],selection=null,selectionController=null,annotationTapUntil=0,readerTapTimer=null,settings={size:18,theme:'paper',lineHeight:1.8,margin:18,paragraph:0.8,brightness:100};
 const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
 const rq=r=>new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const st=(name,mode='readonly')=>db.transaction(name,mode).objectStore(name);
 const put=(name,v)=>rq(st(name,'readwrite').put(v)),get=(name,k)=>rq(st(name).get(k)),all=name=>rq(st(name).getAll()),del=(name,k)=>rq(st(name,'readwrite').delete(k));
+function ebookFileBlob(record){
+ if(record?.blob&&typeof record.blob.arrayBuffer==='function')return record.blob;
+ if(record?.buffer instanceof ArrayBuffer||ArrayBuffer.isView(record?.buffer))
+  return new Blob([record.buffer],{type:record.mimeType||'application/octet-stream'});
+ throw Error('电子书文件数据缺失或无法读取');
+}
+async function storeEbookFile(bookId,name,buffer,mimeType){
+ const type=mimeType||'application/octet-stream';
+ try{
+  await put('files',{id:bookId,name,blob:new Blob([buffer],{type})});
+ }catch(error){
+  // Some mobile WebKit variants reject Blob/File structured cloning into
+  // IndexedDB. Raw ArrayBuffer is supported and can be rehydrated on reading.
+  console.warn('Blob storage failed, using binary fallback',error);
+  await put('files',{id:bookId,name,buffer,mimeType:type});
+ }
+}
 function openDb(){return new Promise((res,rej)=>{let q=indexedDB.open('zhijian-reader',1);q.onupgradeneeded=()=>{let d=q.result;d.createObjectStore('books',{keyPath:'id'});d.createObjectStore('files',{keyPath:'id'});d.createObjectStore('progress',{keyPath:'bookId'});d.createObjectStore('highlights',{keyPath:'id'});d.createObjectStore('bookmarks',{keyPath:'id'})};q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
+
+const READING_SESSION_KEY='zhijian-reader-open-book';
+const readingCheckpointKey=bookId=>'zhijian-reader-position:'+bookId;
+function readReadingCheckpoint(bookId){
+ try{
+  const data=JSON.parse(localStorage.getItem(readingCheckpointKey(bookId))||'null');
+  if(!data||data.engine!=='continuous'||!Number.isInteger(data.sectionIndex)||data.sectionIndex<0||
+   !Number.isFinite(data.sectionFraction)||data.sectionFraction<0||data.sectionFraction>1||
+   !Number.isFinite(data.updatedAt)||data.updatedAt<=0)return null;
+  return data;
+ }catch{return null}
+}
+async function latestReadingProgress(bookId){
+ const persisted=await get('progress',bookId);
+ const checkpoint=readReadingCheckpoint(bookId);
+ const persistedAt=Date.parse(persisted?.updatedAt||'')||0;
+ return checkpoint&&checkpoint.updatedAt>persistedAt
+  ? {...persisted,...checkpoint,bookId,engine:'continuous'} : persisted;
+}
+function rememberOpenBook(bookId){
+ try{localStorage.setItem(READING_SESSION_KEY,JSON.stringify({bookId,openedAt:Date.now()}))}catch{}
+}
+function forgetOpenBook(){
+ try{localStorage.removeItem(READING_SESSION_KEY)}catch{}
+}
+function flushEmbeddedReadingPosition(){
+ if(!active||!['epub','mobi'].includes(active.format))return;
+ try{
+  // Same-origin iframe: sync writes in this call can survive WebView termination.
+  $('#document-body iframe')?.contentWindow?.__zhijianSaveReadingPosition?.();
+ }catch(error){console.warn('Reader checkpoint flush failed',error)}
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)flushEmbeddedReadingPosition()});
+window.addEventListener('pagehide',flushEmbeddedReadingPosition);
+document.addEventListener('freeze',flushEmbeddedReadingPosition);
+async function resumeLastOpenBook(){
+ if(active)return;
+ let saved;
+ try{saved=JSON.parse(localStorage.getItem(READING_SESSION_KEY)||'null')}catch{return}
+ if(!saved?.bookId)return;
+ const record=books.find(book=>book.id===saved.bookId);
+ if(!record){forgetOpenBook();return}
+ if(!['epub','mobi'].includes(record.format))return;
+ try{await openReader(record.id)}catch(error){console.warn('Unable to reopen last book',error)}
+}
+const pendingProgressWrites=new Map();
+function saveContinuousProgress(data){
+ if(!data?.bookId)return;
+ const bookId=data.bookId;
+ const previous=pendingProgressWrites.get(bookId)||Promise.resolve();
+ const task=previous.catch(()=>{}).then(async()=>{
+  if(!active||active.id!==bookId)return;
+  const receivedAt=Number(data.updatedAt)||Date.now();
+  const checkpoint=readReadingCheckpoint(bookId);
+  if(checkpoint&&checkpoint.updatedAt>receivedAt)return;
+  const old=await get('progress',bookId)||{};
+  const priorAt=Date.parse(old.updatedAt||'')||0;
+  if(priorAt>receivedAt)return;
+  const record={...old,bookId,engine:'continuous',
+   cfi:data.cfi||old.cfi||null,
+   sectionIndex:data.sectionIndex??old.sectionIndex??0,
+   sectionFraction:data.sectionFraction??old.sectionFraction??0,
+   sectionOffsetPx:Number.isFinite(data.sectionOffsetPx)?data.sectionOffsetPx:(old.sectionOffsetPx??null),
+   viewportWidth:Number.isFinite(data.viewportWidth)?data.viewportWidth:(old.viewportWidth??null),
+   fontSize:Number.isFinite(data.fontSize)?data.fontSize:(old.fontSize??null),
+   percent:typeof data.percent==='number'?data.percent:(old.percent||0),
+   updatedAt:new Date(receivedAt).toISOString()};
+  await put('progress',record);
+  if(active?.id!==bookId)return;
+  active.percent=record.percent;active.lastRead=record.updatedAt;
+  await put('books',active);
+ }).catch(error=>console.warn('Reading progress persistence failed',error));
+ pendingProgressWrites.set(bookId,task);
+ task.finally(()=>{if(pendingProgressWrites.get(bookId)===task)pendingProgressWrites.delete(bookId)});
+}
+
 function saveSettings(){try{localStorage.setItem('zhijian-reading-settings',JSON.stringify(settings))}catch{}}
 try{settings={...settings,...JSON.parse(localStorage.getItem('zhijian-reading-settings')||'{}')}}catch{}
 function toast(s){$('.toast')?.remove();let e=document.createElement('div');e.className='toast';e.textContent=s;document.body.append(e);setTimeout(()=>e.remove(),3500)}
@@ -380,9 +473,9 @@ async function importFiles(files,options={}){
     id:k,hash,title:m.title||f.name.replace(/\.epub$/i,''),author:m.creator||'',
     format,cover,sourceUrl:options.sourceUrl||null,status:'reading',percent:0,createdAt:now(),lastRead:now()
    };
-   await put('files',{id:k,blob:new Blob([buf],{type:f.type||({
+   await storeEbookFile(k,f.name,buf,f.type||({
     epub:'application/epub+zip',pdf:'application/pdf',mobi:'application/x-mobipocket-ebook'
-   }[format])}),name:f.name});
+   }[format]));
    try{await put('books',book)}
    catch(error){await del('files',k).catch(()=>{});throw error}
    results.push({state:'added',bookId:k,title:book.title});
@@ -408,7 +501,7 @@ function showBookMenu(k,cover){
  const actions=[['在读','reading'],['已读','finished'],['归档','archived'],['删除','delete']];
  menu.innerHTML=actions.map(([label,action])=>'<button type="button" data-book-action="'+action+'"'+(action===b.status?' aria-current="true"':'')+'>'+label+'</button>').join('');
  document.body.append(backdrop,menu);
- menu.querySelectorAll('[data-book-action]').forEach(button=>button.onclick=async()=>{const action=button.dataset.bookAction;closeBookMenu();if(action==='delete'){if(!confirm('确定删除《'+b.title+'》及关联的划线和笔记？'))return;for(const store of ['books','files','progress'])await del(store,k);for(const h of await all('highlights'))if(h.bookId===k)await del('highlights',h.id);for(const m of await all('bookmarks'))if(m.bookId===k)await del('bookmarks',m.id)}else{b.status=action;await put('books',b)}await refresh()});
+ menu.querySelectorAll('[data-book-action]').forEach(button=>button.onclick=async()=>{const action=button.dataset.bookAction;closeBookMenu();if(action==='delete'){if(!confirm('确定删除《'+b.title+'》及关联的划线和笔记？'))return;try{localStorage.removeItem(readingCheckpointKey(k));const session=JSON.parse(localStorage.getItem(READING_SESSION_KEY)||'null');if(session?.bookId===k)forgetOpenBook()}catch{}for(const store of ['books','files','progress'])await del(store,k);for(const h of await all('highlights'))if(h.bookId===k)await del('highlights',h.id);for(const m of await all('bookmarks'))if(m.bookId===k)await del('bookmarks',m.id)}else{b.status=action;await put('books',b)}await refresh()});
 }
 function wireBookCoverGestures(){
  document.querySelectorAll('[data-book]').forEach(article=>{
@@ -430,7 +523,7 @@ function wireBookCoverGestures(){
 }
 
 const palette={paper:['#f6f0e5','#333b34'],white:['#fff','#252525'],green:['#e6eee6','#294034'],dark:['#26292b','#eee']};
-async function openReader(k,target){const b=books.find(x=>x.id===k),f=await get('files',k);if(!b||!f)return toast('电子书文件不存在');if(['epub','mobi','pdf'].includes(b.format||'epub'))return openDocumentReader(b,f,target);if(typeof ePub==='undefined'){toast('EPUB 阅读引擎未就绪，请联网刷新后重试');return}active=b;app.innerHTML=readerShell(b.title,'<div id="viewer" style="width:100%;height:100%"></div>');setupReaderChrome(closeReader,'epub');initEpubDiagnostics();probeEpubEvents();try{epub=ePub(await f.blob.arrayBuffer());await epub.ready;toc=(await epub.loaded.navigation).toc||[];rendition=epub.renderTo('viewer',{width:'100%',height:'100%',flow:'scrolled',manager:'continuous',spread:'none',allowScriptedContent:false});applyTheme();// One tap bridge; delayed synthetic clicks must not toggle the toolbar twice.
+async function openReader(k,target){const b=books.find(x=>x.id===k),record=await get('files',k);if(!b||!record)return toast('电子书文件不存在');let f;try{f={...record,blob:ebookFileBlob(record)}}catch(error){return toast(error.message)}if(['epub','mobi','pdf'].includes(b.format||'epub'))return openDocumentReader(b,f,target);if(typeof ePub==='undefined'){toast('EPUB 阅读引擎未就绪，请联网刷新后重试');return}active=b;app.innerHTML=readerShell(b.title,'<div id="viewer" style="width:100%;height:100%"></div>');setupReaderChrome(closeReader,'epub');initEpubDiagnostics();probeEpubEvents();try{epub=ePub(await f.blob.arrayBuffer());await epub.ready;toc=(await epub.loaded.navigation).toc||[];rendition=epub.renderTo('viewer',{width:'100%',height:'100%',flow:'scrolled',manager:'continuous',spread:'none',allowScriptedContent:false});applyTheme();// One tap bridge; delayed synthetic clicks must not toggle the toolbar twice.
 let lastEpubToggleAt=0;
 const epubTapToggle=()=>{if(active?.id!==b.id||Date.now()-lastEpubToggleAt<1000||selection?.text)return;lastEpubToggleAt=Date.now();scheduleReaderTap()};
 rendition.on('relocated',async loc=>{if(!active)return;let percent=0;try{if(epub.locations.length())percent=epub.locations.percentageFromCfi(loc.start.cfi)||0}catch{}active.percent=percent;active.lastRead=now();await put('progress',{bookId:active.id,cfi:loc.start.cfi,percent,updatedAt:now()});await put('books',active)});// Bind to the iframe currently mounted by epub.js, not only its content hook.
@@ -869,22 +962,27 @@ window.addEventListener('message',async e=>{
 });
 
 let documentUrl=null;
-window.addEventListener('message',async e=>{if(e.origin!==location.origin||!active||!['mobi','epub'].includes(active.format))return;const d=e.data;if(d?.type==='MOBI_PREFS'){settings={...settings,...d.prefs};saveSettings();return}if(d?.type==='MOBI_PROGRESS'&&d.bookId===active.id){const old=await get('progress',active.id)||{};const record={...old,bookId:active.id,engine:d.engine==='continuous'?'continuous':'foliate',cfi:d.cfi||old.cfi||null,sectionIndex:d.sectionIndex??old.sectionIndex??0,sectionFraction:d.sectionFraction??old.sectionFraction??0,percent:typeof d.percent==='number'?d.percent:(old.percent||0),updatedAt:now()};await put('progress',record);active.percent=record.percent;active.lastRead=now();await put('books',active)}});
+window.addEventListener('message',e=>{
+ if(e.origin!==location.origin||!active||!['mobi','epub'].includes(active.format))return;
+ const data=e.data;
+ if(data?.type==='MOBI_PREFS'){settings={...settings,...data.prefs};saveSettings();return}
+ if(data?.type==='MOBI_PROGRESS'&&data.bookId===active.id)saveContinuousProgress(data);
+});
 
 async function openDocumentReader(b,f,target){
-  active=b;let format=b.format||'epub';
+  active=b;rememberOpenBook(b.id);let format=b.format||'epub';
   app.innerHTML=readerShell(b.title,'<div id="document-body" style="width:100%;height:100%"></div>');
-  setupReaderChrome(async()=>{closeInlineNoteActions();clearSelection();documentUrl&&URL.revokeObjectURL(documentUrl);documentUrl=null;active=null;await refresh()},format);
+  setupReaderChrome(async()=>{flushEmbeddedReadingPosition();forgetOpenBook();closeInlineNoteActions();clearSelection();documentUrl&&URL.revokeObjectURL(documentUrl);documentUrl=null;active=null;await refresh()},format);
   if(format==='pdf'){
     let frame=document.createElement('iframe');frame.src='./pdf-reader.html';frame.title=b.title;frame.style.cssText='width:100%;height:100%;border:0;background:#fff';$('#document-body').append(frame);
     frame.onload=async()=>{try{if(!active||active.id!==b.id)return;const data=await f.blob.arrayBuffer();frame.contentWindow.postMessage({type:'OPEN_PDF',buffer:data},location.origin,[data])}catch(err){toast('PDF 加载失败：'+err.message)}};
   }else{
     let frame=document.createElement('iframe');frame.src='./continuous-reader.html?embed=1';frame.title=b.title;frame.style.cssText='width:100%;height:100%;border:0;background:#fff';$('#document-body').append(frame);
-    frame.onload=async()=>{if(!active||active.id!==b.id)return;let data=await f.blob.arrayBuffer();const progress=await get('progress',b.id);const saved=['foliate','continuous'].includes(progress?.engine)?progress:null;frame.contentWindow.postMessage({type:'OPEN_BOOK',format,bookId:b.id,cfi:target||saved?.cfi||null,restoreExact:!!target,sectionIndex:saved?.sectionIndex??null,sectionFraction:saved?.sectionFraction??null,prefs:settings,notes:(await all('highlights')).filter(h=>h.bookId===b.id).map(h=>({id:h.id,cfi:h.cfi||null,text:h.text,note:h.note||''})),buffer:data,name:f.name||b.title+'.'+format},location.origin,[data])};
+    frame.onload=async()=>{if(!active||active.id!==b.id)return;let data=await f.blob.arrayBuffer();const progress=await latestReadingProgress(b.id);const saved=['foliate','continuous'].includes(progress?.engine)?progress:null;frame.contentWindow.postMessage({type:'OPEN_BOOK',format,bookId:b.id,cfi:target||saved?.cfi||null,restoreExact:!!target,sectionIndex:saved?.sectionIndex??null,sectionFraction:saved?.sectionFraction??null,sectionOffsetPx:saved?.sectionOffsetPx??null,viewportWidth:saved?.viewportWidth??null,fontSize:saved?.fontSize??null,prefs:settings,notes:(await all('highlights')).filter(h=>h.bookId===b.id).map(h=>({id:h.id,cfi:h.cfi||null,text:h.text,note:h.note||''})),buffer:data,name:f.name||b.title+'.'+format},location.origin,[data])};
   }
   b.lastRead=now();await put('books',b);
 }
-async function closeReader(){closeInlineNoteActions();clearSelection();removePop();active=null;try{rendition?.destroy();epub?.destroy()}catch{}rendition=null;epub=null;await refresh()}
+async function closeReader(){forgetOpenBook();closeInlineNoteActions();clearSelection();removePop();active=null;try{rendition?.destroy();epub?.destroy()}catch{}rendition=null;epub=null;await refresh()}
 async function notesPage(){
  const records=(await all('highlights')).sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||'')));
  if(view!=='notes'||active)return;
@@ -962,6 +1060,13 @@ async function notesPage(){
   });
  });
 }
-async function backup(){try{let out={version:1,createdAt:now(),books:await all('books'),progress:await all('progress'),highlights:await all('highlights'),bookmarks:await all('bookmarks'),files:[]};for(let f of await all('files')){let bytes=new Uint8Array(await f.blob.arrayBuffer()),str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));out.files.push({id:f.id,name:f.name,base64:btoa(str)})}let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));a.download='zhijian-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000);toast('请将备份保存到安全位置')}catch(e){toast('备份失败：'+e.message)}}
-async function restore(file){if(!file)return;try{let d=JSON.parse(await file.text());if(d.version!==1||!Array.isArray(d.books)||!Array.isArray(d.files))throw Error('备份格式不正确');if(!confirm('恢复 '+d.books.length+' 本书？相同 ID 数据将覆盖'))return;for(let f of d.files){let raw=atob(f.base64),bytes=Uint8Array.from(raw,x=>x.charCodeAt(0));await put('files',{id:f.id,name:f.name,blob:new Blob([bytes],{type:({pdf:'application/pdf',mobi:'application/x-mobipocket-ebook',epub:'application/epub+zip'}[(d.books.find(b=>b.id===f.id)?.format)||'epub'])})})}for(let b of d.books)await put('books',b);for(let store of ['progress','highlights','bookmarks'])for(let row of d[store]||[])await put(store,row);view='shelf';toast('备份已恢复');await refresh()}catch(e){toast('恢复失败：'+e.message)}}
-(async()=>{try{db=await openDb();await refresh();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);await handleSharedImportLink()}catch(e){app.textContent='数据库初始化失败：'+e.message}})();
+async function backup(){try{let out={version:1,createdAt:now(),books:await all('books'),progress:await all('progress'),highlights:await all('highlights'),bookmarks:await all('bookmarks'),files:[]};for(let f of await all('files')){let bytes=new Uint8Array(await ebookFileBlob(f).arrayBuffer()),str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));out.files.push({id:f.id,name:f.name,base64:btoa(str)})}let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));a.download='zhijian-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000);toast('请将备份保存到安全位置')}catch(e){toast('备份失败：'+e.message)}}
+async function restore(file){if(!file)return;try{let d=JSON.parse(await file.text());if(d.version!==1||!Array.isArray(d.books)||!Array.isArray(d.files))throw Error('备份格式不正确');if(!confirm('恢复 '+d.books.length+' 本书？相同 ID 数据将覆盖'))return;for(let f of d.files){let raw=atob(f.base64),bytes=Uint8Array.from(raw,x=>x.charCodeAt(0));await storeEbookFile(f.id,f.name,bytes,({pdf:'application/pdf',mobi:'application/x-mobipocket-ebook',epub:'application/epub+zip'}[(d.books.find(b=>b.id===f.id)?.format)||'epub']))}for(let b of d.books)await put('books',b);for(let store of ['progress','highlights','bookmarks'])for(let row of d[store]||[])await put(store,row);view='shelf';toast('备份已恢复');await refresh()}catch(e){toast('恢复失败：'+e.message)}}
+(async()=>{try{
+ db=await openDb();await refresh();
+ if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);
+ // A shared-book deep link takes precedence over a previous reading session.
+ const importing=new URLSearchParams(location.search).has('import');
+ await handleSharedImportLink();
+ if(!importing)await resumeLastOpenBook();
+}catch(e){app.textContent='数据库初始化失败：'+e.message}})();
