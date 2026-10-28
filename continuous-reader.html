@@ -336,7 +336,11 @@ function activeIndex(){
 const readingCheckpointKey=bookId=>'zhijian-reader-position:'+bookId;
 function captureReadingPosition(){
  if(!book||restoring||!items.length)return null;
- const index=activeIndex(),region=items[index],scroller=$('#scroll');
+ const scroller=$('#scroll');
+ // Background WebViews sometimes report a collapsed 0×0 viewport. Never
+ // overwrite a good checkpoint with measurements taken after suspension.
+ if(scroller.clientWidth<80||scroller.clientHeight<80)return null;
+ const index=activeIndex(),region=items[index];
  if(!region||region.state==='skipped')return null;
  const fraction=Math.max(0,Math.min(1,
   (scroller.scrollTop-region.el.offsetTop)/Math.max(1,region.height-scroller.clientHeight)));
