@@ -6,6 +6,23 @@ const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
 const rq=r=>new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const st=(name,mode='readonly')=>db.transaction(name,mode).objectStore(name);
 const put=(name,v)=>rq(st(name,'readwrite').put(v)),get=(name,k)=>rq(st(name).get(k)),all=name=>rq(st(name).getAll()),del=(name,k)=>rq(st(name,'readwrite').delete(k));
+function ebookFileBlob(record){
+ if(record?.blob&&typeof record.blob.arrayBuffer==='function')return record.blob;
+ if(record?.buffer instanceof ArrayBuffer||ArrayBuffer.isView(record?.buffer))
+  return new Blob([record.buffer],{type:record.mimeType||'application/octet-stream'});
+ throw Error('电子书文件数据缺失或无法读取');
+}
+async function storeEbookFile(bookId,name,buffer,mimeType){
+ const type=mimeType||'application/octet-stream';
+ try{
+  await put('files',{id:bookId,name,blob:new Blob([buffer],{type})});
+ }catch(error){
+  // Some mobile WebKit variants reject Blob/File structured cloning into
+  // IndexedDB. Raw ArrayBuffer is supported and can be rehydrated on reading.
+  console.warn('Blob storage failed, using binary fallback',error);
+  await put('files',{id:bookId,name,buffer,mimeType:type});
+ }
+}
 function openDb(){return new Promise((res,rej)=>{let q=indexedDB.open('zhijian-reader',1);q.onupgradeneeded=()=>{let d=q.result;d.createObjectStore('books',{keyPath:'id'});d.createObjectStore('files',{keyPath:'id'});d.createObjectStore('progress',{keyPath:'bookId'});d.createObjectStore('highlights',{keyPath:'id'});d.createObjectStore('bookmarks',{keyPath:'id'})};q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
 
 const READING_SESSION_KEY='zhijian-reader-open-book';
@@ -456,9 +473,9 @@ async function importFiles(files,options={}){
     id:k,hash,title:m.title||f.name.replace(/\.epub$/i,''),author:m.creator||'',
     format,cover,sourceUrl:options.sourceUrl||null,status:'reading',percent:0,createdAt:now(),lastRead:now()
    };
-   await put('files',{id:k,blob:new Blob([buf],{type:f.type||({
+   await storeEbookFile(k,f.name,buf,f.type||({
     epub:'application/epub+zip',pdf:'application/pdf',mobi:'application/x-mobipocket-ebook'
-   }[format])}),name:f.name});
+   }[format]));
    try{await put('books',book)}
    catch(error){await del('files',k).catch(()=>{});throw error}
    results.push({state:'added',bookId:k,title:book.title});
@@ -506,7 +523,7 @@ function wireBookCoverGestures(){
 }
 
 const palette={paper:['#f6f0e5','#333b34'],white:['#fff','#252525'],green:['#e6eee6','#294034'],dark:['#26292b','#eee']};
-async function openReader(k,target){const b=books.find(x=>x.id===k),f=await get('files',k);if(!b||!f)return toast('电子书文件不存在');if(['epub','mobi','pdf'].includes(b.format||'epub'))return openDocumentReader(b,f,target);if(typeof ePub==='undefined'){toast('EPUB 阅读引擎未就绪，请联网刷新后重试');return}active=b;app.innerHTML=readerShell(b.title,'<div id="viewer" style="width:100%;height:100%"></div>');setupReaderChrome(closeReader,'epub');initEpubDiagnostics();probeEpubEvents();try{epub=ePub(await f.blob.arrayBuffer());await epub.ready;toc=(await epub.loaded.navigation).toc||[];rendition=epub.renderTo('viewer',{width:'100%',height:'100%',flow:'scrolled',manager:'continuous',spread:'none',allowScriptedContent:false});applyTheme();// One tap bridge; delayed synthetic clicks must not toggle the toolbar twice.
+async function openReader(k,target){const b=books.find(x=>x.id===k),record=await get('files',k);if(!b||!record)return toast('电子书文件不存在');let f;try{f={...record,blob:ebookFileBlob(record)}}catch(error){return toast(error.message)}if(['epub','mobi','pdf'].includes(b.format||'epub'))return openDocumentReader(b,f,target);if(typeof ePub==='undefined'){toast('EPUB 阅读引擎未就绪，请联网刷新后重试');return}active=b;app.innerHTML=readerShell(b.title,'<div id="viewer" style="width:100%;height:100%"></div>');setupReaderChrome(closeReader,'epub');initEpubDiagnostics();probeEpubEvents();try{epub=ePub(await f.blob.arrayBuffer());await epub.ready;toc=(await epub.loaded.navigation).toc||[];rendition=epub.renderTo('viewer',{width:'100%',height:'100%',flow:'scrolled',manager:'continuous',spread:'none',allowScriptedContent:false});applyTheme();// One tap bridge; delayed synthetic clicks must not toggle the toolbar twice.
 let lastEpubToggleAt=0;
 const epubTapToggle=()=>{if(active?.id!==b.id||Date.now()-lastEpubToggleAt<1000||selection?.text)return;lastEpubToggleAt=Date.now();scheduleReaderTap()};
 rendition.on('relocated',async loc=>{if(!active)return;let percent=0;try{if(epub.locations.length())percent=epub.locations.percentageFromCfi(loc.start.cfi)||0}catch{}active.percent=percent;active.lastRead=now();await put('progress',{bookId:active.id,cfi:loc.start.cfi,percent,updatedAt:now()});await put('books',active)});// Bind to the iframe currently mounted by epub.js, not only its content hook.
@@ -1043,8 +1060,8 @@ async function notesPage(){
   });
  });
 }
-async function backup(){try{let out={version:1,createdAt:now(),books:await all('books'),progress:await all('progress'),highlights:await all('highlights'),bookmarks:await all('bookmarks'),files:[]};for(let f of await all('files')){let bytes=new Uint8Array(await f.blob.arrayBuffer()),str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));out.files.push({id:f.id,name:f.name,base64:btoa(str)})}let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));a.download='zhijian-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000);toast('请将备份保存到安全位置')}catch(e){toast('备份失败：'+e.message)}}
-async function restore(file){if(!file)return;try{let d=JSON.parse(await file.text());if(d.version!==1||!Array.isArray(d.books)||!Array.isArray(d.files))throw Error('备份格式不正确');if(!confirm('恢复 '+d.books.length+' 本书？相同 ID 数据将覆盖'))return;for(let f of d.files){let raw=atob(f.base64),bytes=Uint8Array.from(raw,x=>x.charCodeAt(0));await put('files',{id:f.id,name:f.name,blob:new Blob([bytes],{type:({pdf:'application/pdf',mobi:'application/x-mobipocket-ebook',epub:'application/epub+zip'}[(d.books.find(b=>b.id===f.id)?.format)||'epub'])})})}for(let b of d.books)await put('books',b);for(let store of ['progress','highlights','bookmarks'])for(let row of d[store]||[])await put(store,row);view='shelf';toast('备份已恢复');await refresh()}catch(e){toast('恢复失败：'+e.message)}}
+async function backup(){try{let out={version:1,createdAt:now(),books:await all('books'),progress:await all('progress'),highlights:await all('highlights'),bookmarks:await all('bookmarks'),files:[]};for(let f of await all('files')){let bytes=new Uint8Array(await ebookFileBlob(f).arrayBuffer()),str='';for(let i=0;i<bytes.length;i+=16384)str+=String.fromCharCode(...bytes.subarray(i,i+16384));out.files.push({id:f.id,name:f.name,base64:btoa(str)})}let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));a.download='zhijian-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),10000);toast('请将备份保存到安全位置')}catch(e){toast('备份失败：'+e.message)}}
+async function restore(file){if(!file)return;try{let d=JSON.parse(await file.text());if(d.version!==1||!Array.isArray(d.books)||!Array.isArray(d.files))throw Error('备份格式不正确');if(!confirm('恢复 '+d.books.length+' 本书？相同 ID 数据将覆盖'))return;for(let f of d.files){let raw=atob(f.base64),bytes=Uint8Array.from(raw,x=>x.charCodeAt(0));await storeEbookFile(f.id,f.name,bytes,({pdf:'application/pdf',mobi:'application/x-mobipocket-ebook',epub:'application/epub+zip'}[(d.books.find(b=>b.id===f.id)?.format)||'epub']))}for(let b of d.books)await put('books',b);for(let store of ['progress','highlights','bookmarks'])for(let row of d[store]||[])await put(store,row);view='shelf';toast('备份已恢复');await refresh()}catch(e){toast('恢复失败：'+e.message)}}
 (async()=>{try{
  db=await openDb();await refresh();
  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);
