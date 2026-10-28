@@ -66,7 +66,7 @@ async function getReadingState(page){
      sourceUrl:null,status:'reading',percent:0,createdAt:date,lastRead:date
     }).onerror=fail;
     tx.objectStore('files').put({
-     id,name:'mobile-resume.mobi',blob:new Blob([data],{type:'application/x-mobipocket-ebook'})
+     id,name:'mobile-resume.mobi',buffer:data.buffer,mimeType:'application/x-mobipocket-ebook'
     }).onerror=fail;
     tx.oncomplete=resolve;
    });
