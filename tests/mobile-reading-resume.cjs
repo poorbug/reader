@@ -43,28 +43,56 @@ async function getReadingState(page){
   page.on('pageerror',error=>errors.push(error.message));
   const root=process.env.BASE_URL||'http://127.0.0.1:8765/';
   await page.goto(root,{waitUntil:'domcontentloaded'});
-  await page.locator('#picker').setInputFiles({
-   name:'mobile-resume.mobi',mimeType:'application/x-mobipocket-ebook',buffer:mobiFixture()
-  });
-  await page.locator('[data-book]').first().waitFor({timeout:15000}).catch(async error=>{
-   const diagnostic=await page.evaluate(()=>({page:document.querySelector('#app')?.innerText?.slice(0,1500),toast:document.querySelector('.toast')?.innerText,ready:document.readyState,hasApp:!!document.querySelector('#app'),picker:!!document.querySelector('#picker')}));
-   throw Error('Fixture import failed in '+(process.env.BROWSER||'chromium')+': '+error.message+'; '+JSON.stringify(diagnostic)+'; page errors='+errors.join(' | '));
-  });
+  await page.locator('[data-tab="all"]').waitFor({timeout:15000});
+  // Seed the storage directly: this regression tests recovery, not the
+  // unrelated file-picker/MOBI import implementation on iOS WebKit.
+  await page.evaluate(async(encoded)=>{
+   const data=Uint8Array.from(atob(encoded),char=>char.charCodeAt(0));
+   const database=await new Promise((resolve,reject)=>{
+    const request=indexedDB.open('zhijian-reader',1);
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error);
+   });
+   const id='resume-test-book',date=new Date().toISOString();
+   await new Promise((resolve,reject)=>{
+    const tx=database.transaction(['books','files'],'readwrite');
+    tx.objectStore('books').put({
+     id,hash:'resume-test-hash',title:'手机恢复测试',author:'',format:'mobi',cover:null,
+     sourceUrl:null,status:'reading',percent:0,createdAt:date,lastRead:date
+    });
+    tx.objectStore('files').put({
+     id,name:'mobile-resume.mobi',blob:new Blob([data],{type:'application/x-mobipocket-ebook'})
+    });
+    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+   });
+   database.close();
+  },mobiFixture().toString('base64'));
+  await page.reload({waitUntil:'domcontentloaded'});
+  await page.locator('[data-book]').first().waitFor({timeout:15000});
   await page.locator('[data-book]').first().click();
   await page.waitForFunction(()=>{
    const doc=document.querySelector('#document-body iframe')?.contentDocument;
    return doc?.querySelector('#reader-loading')?.hidden&&
     !!doc?.querySelector('[data-index="1"] iframe')?.contentDocument?.body;
   },{timeout:30000});
+  // Let the asynchronously mounted preceding section settle before measuring.
+  await page.waitForTimeout(500);
   const targetFraction=.42;
   await page.evaluate(fraction=>{
    const root=document.querySelector('#document-body iframe').contentDocument.querySelector('#scroll');
    const second=root.querySelector('[data-index="1"]');
    root.scrollTop=second.offsetTop+Math.round(Math.max(1,second.offsetHeight-root.clientHeight)*fraction);
    root.dispatchEvent(new Event('scroll'));
-   // Simulate an abrupt backgrounding before debounce timers have fired.
-   window.dispatchEvent(new Event('pagehide'));
-  },targetFraction).catch(async e=>{throw Error('Failed to prepare reading position: '+e.message)});
+  },targetFraction);
+  await page.waitForFunction(fraction=>{
+   const doc=document.querySelector('#document-body iframe')?.contentDocument,root=doc?.querySelector('#scroll');
+   if(!root)return false;
+   const section=root.querySelector('[data-index="1"]');
+   const value=(root.scrollTop-section.offsetTop)/Math.max(1,section.offsetHeight-root.clientHeight);
+   return Math.abs(value-fraction)<.09;
+  },targetFraction,{timeout:6000});
+  // Simulate sudden backgrounding before the delayed IndexedDB save runs.
+  await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
   const before=await getReadingState(page);
   assert.ok(before.checkpoint,'pagehide must write synchronous local checkpoint');
   assert.equal(before.checkpoint.sectionIndex,1,'checkpoint must contain the active chapter');
