@@ -46,7 +46,10 @@ async function getReadingState(page){
   await page.locator('#picker').setInputFiles({
    name:'mobile-resume.mobi',mimeType:'application/x-mobipocket-ebook',buffer:mobiFixture()
   });
-  await page.locator('[data-book]').first().waitFor({timeout:30000});
+  await page.locator('[data-book]').first().waitFor({timeout:15000}).catch(async error=>{
+   const diagnostic=await page.evaluate(()=>({page:document.querySelector('#app')?.innerText?.slice(0,1500),toast:document.querySelector('.toast')?.innerText,ready:document.readyState,hasApp:!!document.querySelector('#app'),picker:!!document.querySelector('#picker')}));
+   throw Error('Fixture import failed in '+(process.env.BROWSER||'chromium')+': '+error.message+'; '+JSON.stringify(diagnostic)+'; page errors='+errors.join(' | '));
+  });
   await page.locator('[data-book]').first().click();
   await page.waitForFunction(()=>{
    const doc=document.querySelector('#document-body iframe')?.contentDocument;
