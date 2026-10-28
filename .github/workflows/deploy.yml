@@ -5,8 +5,8 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    # Refresh the public bookshelf hourly, even when no code changes.
-    - cron: '17 * * * *'
+    # Refresh the public bookshelf once daily at 00:17 UTC (08:17 Beijing time).
+    - cron: '17 0 * * *'
 permissions:
   contents: read
   pages: write
