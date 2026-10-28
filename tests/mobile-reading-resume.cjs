@@ -56,14 +56,19 @@ async function getReadingState(page){
    const id='resume-test-book',date=new Date().toISOString();
    await new Promise((resolve,reject)=>{
     const tx=database.transaction(['books','files'],'readwrite');
+    const fail=event=>{
+     const reason=event?.target?.error||tx.error;
+     reject(Error('Fixture IndexedDB transaction '+(reason?.name||'unknown')+': '+(reason?.message||'no details')));
+    };
+    tx.onabort=fail;tx.onerror=fail;
     tx.objectStore('books').put({
      id,hash:'resume-test-hash',title:'手机恢复测试',author:'',format:'mobi',cover:null,
      sourceUrl:null,status:'reading',percent:0,createdAt:date,lastRead:date
-    });
+    }).onerror=fail;
     tx.objectStore('files').put({
      id,name:'mobile-resume.mobi',blob:new Blob([data],{type:'application/x-mobipocket-ebook'})
-    });
-    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+    }).onerror=fail;
+    tx.oncomplete=resolve;
    });
    database.close();
   },mobiFixture().toString('base64'));
