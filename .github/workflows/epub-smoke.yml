@@ -28,6 +28,10 @@ jobs:
         run: node tests/mobi-layout-stability.cjs
       - name: Verify WebKit short MOBI chapter scroll stability
         run: BROWSER=webkit node tests/mobi-layout-stability.cjs
+      - name: Verify the reported public MOBI book does not auto-scroll
+        env:
+          TEST_MOBI_URL: https://reader-ebook.tos-cn-beijing.volces.com/books/%E8%AE%B7%E6%B2%B3%E5%BE%80%E4%BA%8B_%E9%BB%84%E8%93%89.mobi
+        run: node tests/mobi-real-drift.cjs
       - name: Verify Chromium mobile reading resume after pagehide
         run: node tests/mobile-reading-resume.cjs
       - name: Verify WebKit mobile reading resume after pagehide
