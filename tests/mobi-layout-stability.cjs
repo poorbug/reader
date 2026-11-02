@@ -49,7 +49,23 @@ async function sampleStability(page) {
   root.dispatchEvent(new Event('scroll'));
   const samples=[];
   for(let i=0;i<14;i++){samples.push(snap());await new Promise(resolve=>setTimeout(resolve,125))}
-  return {samples,viewport:root.clientHeight,firstContent:first.querySelector('iframe')?.contentDocument?.body?.textContent?.slice(0,90)};
+  const doc=first.querySelector('iframe')?.contentDocument,body=doc?.body;
+  const bodyRect=body?.getBoundingClientRect();
+  const diagnostic={
+   htmlHeight:doc?.documentElement?.getBoundingClientRect().height,
+   bodyHeight:bodyRect?.height,
+   bodyScrollHeight:body?.scrollHeight,
+   bodyStyle:body&&{height:getComputedStyle(body).height,minHeight:getComputedStyle(body).minHeight,
+    display:getComputedStyle(body).display,overflow:getComputedStyle(body).overflow},
+   children:[...(body?.children||[])].slice(0,12).map(el=>({
+    tag:el.tagName,className:String(el.className||'').slice(0,80),
+    top:Math.round(el.getBoundingClientRect().top-(bodyRect?.top||0)),
+    bottom:Math.round(el.getBoundingClientRect().bottom-(bodyRect?.top||0)),
+    height:Math.round(el.getBoundingClientRect().height),
+    computedHeight:getComputedStyle(el).height
+   }))
+  };
+  return {samples,viewport:root.clientHeight,firstContent:body?.textContent?.slice(0,90),diagnostic};
  });
 }
 (async()=>{
