@@ -68,7 +68,7 @@ function toggleTools(){if(selected?.text)return;const time=Date.now();if(time-la
 function clearSelection(){const controller=selectionControl;selectionControl=null;selected=null;$('#selection-tools').classList.remove('visible');controller?.clear();if(embedded)tell('ZHJ_SELECTION',{text:'',cfi:null})}
 async function hashFile(file){const bytes=await file.arrayBuffer();const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));return [Array.from(hash,x=>x.toString(16).padStart(2,'0')).join(''),bytes]}
 // Chapter boundary stability: never write scrollTop from asynchronous layout.
-// Native scroll anchoring maintains the user's position when earlier chapters resize.
+// Native scroll anchoring is disabled to avoid double corrections.
 function scheduleIdleMaintenance(){
  clearTimeout(settleTimer);
  settleTimer=setTimeout(()=>{
@@ -84,13 +84,40 @@ function setChapterHeight(item,newHeight){
  item.el.style.height=height+'px';
  item.frame?.style.setProperty('height',height+'px');
 }
+// Body scrollHeight / bounding height can be the iframe's *viewport* height
+// even for a one-line chapter. Measuring the viewport and setting the iframe
+// to that value + 2px caused an endless feedback loop and automatic drift.
+// Instead measure the actual laid-out content without mutating the chapter DOM
+// (wrapping nodes would invalidate existing CFI highlight/reading positions).
+function chapterContentHeight(doc){
+ const body=doc?.body;
+ if(!body)return 0;
+ const win=doc.defaultView,bodyRect=body.getBoundingClientRect();
+ const bodyStyle=win.getComputedStyle(body);
+ const paddingBottom=parseFloat(bodyStyle.paddingBottom)||0;
+ let bottom=parseFloat(bodyStyle.paddingTop)||0;
+ for(const child of body.childNodes){
+  let rect,marginBottom=0;
+  if(child.nodeType===Node.ELEMENT_NODE){
+   if(child.matches('script,style,template,[data-zj-note-layer],[data-zhj-selection-overlay]'))continue;
+   const style=win.getComputedStyle(child);
+   if(style.display==='none'||style.position==='fixed')continue;
+   rect=child.getBoundingClientRect();
+   marginBottom=Math.max(0,parseFloat(style.marginBottom)||0);
+  }else if(child.nodeType===Node.TEXT_NODE&&child.textContent?.trim()){
+   const range=doc.createRange();
+   range.selectNodeContents(child);
+   rect=range.getBoundingClientRect();
+  }else continue;
+  if(rect&&Number.isFinite(rect.bottom))
+   bottom=Math.max(bottom,rect.bottom-bodyRect.top+marginBottom);
+ }
+ return Math.max(20,Math.ceil(bottom+paddingBottom)+1);
+}
 function measure(item){
  if(item.state!=='ready'||!item.frame?.contentDocument)return;
- const body=item.frame.contentDocument.body;
- if(!body)return;
- // Keep a chapter's measurement independent of its iframe viewport height.
- const height=Math.max(body.scrollHeight,body.getBoundingClientRect().height)+2;
- if(Number.isFinite(height))setChapterHeight(item,height);
+ const height=chapterContentHeight(item.frame.contentDocument);
+ if(Number.isFinite(height)&&height>0)setChapterHeight(item,height);
 }
 function scheduleMeasure(item){
  if(item.measureFrame||item.state!=='ready')return;

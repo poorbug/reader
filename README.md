@@ -33,6 +33,10 @@ Pages 地址（启用 Pages 后）：https://poorbug.github.io/reader/
 - 阅读进度及书籍文件仍仅存储在当前设备；清除浏览器网站数据会同时清除检查点。
 - 部分 WebKit 环境无法把 `Blob` 直接持久化到 IndexedDB；存储时会尝试原始 `ArrayBuffer` 作为后备格式，读取、备份及还原兼容两种格式。
 
+## MOBI 连续滚动高度稳定性
+
+从 v1.0.74 起，章节 iframe 高度根据正文子元素的实际布局位置计算，不再直接使用可能随着 iframe 高度一起增长的 `body.scrollHeight` / `body.getBoundingClientRect().height`。旧逻辑对短章节存在每次额外增加 2px 的反馈循环，导致章节边界在不触摸屏幕时仍持续漂移。新算法不改动原始章节 DOM，保持 CFI 划线、笔记与进度坐标结构。Chromium 与 WebKit 的短章节回归验证章节尺寸、内容不裁剪和交界位置稳定。可单次使用 `TEST_MOBI_URL=... node tests/mobi-real-drift.cjs` 检查公开 MOBI 文件（不会提交书籍内容）。
+
 ## 在线书库（火山引擎 TOS）
 
 书架新增「在线书库」标签，可搜索公开书籍、查看格式和大小，并一键导入本地书架。已导入的下载链接会显示「已加入书架」；下载仍复用 SHA-256 去重和 IndexedDB 保存逻辑，不会覆盖用户已有进度或笔记。当前单本文件导入上限 250 MiB（大文件请留意移动设备存储空间及流量）。
