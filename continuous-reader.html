@@ -68,7 +68,7 @@ function toggleTools(){if(selected?.text)return;const time=Date.now();if(time-la
 function clearSelection(){const controller=selectionControl;selectionControl=null;selected=null;$('#selection-tools').classList.remove('visible');controller?.clear();if(embedded)tell('ZHJ_SELECTION',{text:'',cfi:null})}
 async function hashFile(file){const bytes=await file.arrayBuffer();const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));return [Array.from(hash,x=>x.toString(16).padStart(2,'0')).join(''),bytes]}
 // Chapter boundary stability: never write scrollTop from asynchronous layout.
-// Native scroll anchoring maintains the user's position when earlier chapters resize.
+// Native scroll anchoring is disabled to avoid double corrections.
 function scheduleIdleMaintenance(){
  clearTimeout(settleTimer);
  settleTimer=setTimeout(()=>{

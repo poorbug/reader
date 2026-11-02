@@ -65,7 +65,7 @@ async function sampleStability(page) {
     computedHeight:getComputedStyle(el).height
    }))
   };
-  return {samples,viewport:root.clientHeight,firstContent:body?.textContent?.slice(0,90),diagnostic};
+  return {samples,viewport:root.clientHeight,secondHeight:second.offsetHeight,firstContent:body?.textContent?.slice(0,90),diagnostic};
  });
 }
 (async()=>{
@@ -90,6 +90,10 @@ async function sampleStability(page) {
   const result=await sampleStability(page);
   const {samples}=result,first=samples[0],last=samples.at(-1);
   console.log('SHORT_CHAPTER_METRICS '+JSON.stringify(result));
+  assert.ok(last.height<result.viewport*.8,
+   'Short chapter should use actual content bounds, not the iframe viewport: '+last.height);
+  assert.ok(result.secondHeight>result.viewport,
+   'Long next chapter should not be clipped by intrinsic sizing');
   const delta=last.height-first.height;
   assert.ok(delta<6,'A short chapter grows by '+delta+'px without user input (iframe feedback loop)');
   const sectionShift=last.secondTop-first.secondTop;
